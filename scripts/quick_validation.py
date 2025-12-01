@@ -297,11 +297,11 @@ def validate_training():
         num_rollouts = total_steps // rollout_steps
 
         for rollout_idx in range(num_rollouts):
-            # Collect rollout
-            rollout_stats = trainer.collect_rollout(env, rollout_steps, buffer)
+            # Collect rollout (returns stats and last_value)
+            rollout_stats, last_value = trainer.collect_rollout(env, rollout_steps, buffer)
 
-            # Update policy
-            update_stats = trainer.update(buffer)
+            # Update policy (requires last_value for bootstrapping)
+            update_stats = trainer.update(buffer, last_value)
 
             if (rollout_idx + 1) % 5 == 0:
                 steps_done = (rollout_idx + 1) * rollout_steps
