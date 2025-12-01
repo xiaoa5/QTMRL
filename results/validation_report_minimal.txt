@@ -1,0 +1,19 @@
+QTMRL Minimal Validation Report
+Generated: 2025-12-01 18:15:14
+============================================================
+
+Packages:
+  numpy: 2.3.5
+  pandas: 2.3.3
+  torch: NOT INSTALLED
+  pyyaml: installed
+
+Results:
+------------------------------------------------------------
+  FAIL   1. Module Imports
+  SKIP   2. Data Structures
+  FAIL   3. Trading Environment
+  SKIP   4. Model Architectures
+  SKIP   5. Evaluation Metrics
+------------------------------------------------------------
+Passed: 0, Failed: 2, Skipped: 3
