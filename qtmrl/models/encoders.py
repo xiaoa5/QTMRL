@@ -55,19 +55,22 @@ class TimeCNNEncoder(nn.Module):
             [B, N, d_model] 编码后的资产表示
         """
         B, W, N, n_feat = features.shape
-        assert N == self.n_assets
-        assert n_feat == self.n_features
+        assert N == self.n_assets, f"Expected {self.n_assets} assets, got {N}"
+        assert n_feat == self.n_features, f"Expected {self.n_features} features, got {n_feat}"
 
-        # For very small windows, use a simpler approach
-        if W == 1:
-            # Use linear projection instead of convolution for single timestep
+        # For very small windows (W < 3), use linear projection to avoid conv issues
+        # Conv1d with small inputs can have padding problems, especially with multiple layers
+        if W < 3:
+            # Use linear projection instead of convolution for very small windows
             if not hasattr(self, 'linear_proj'):
                 self.linear_proj = nn.Linear(self.n_features, self.d_model).to(features.device)
             
             asset_encodings = []
             for i in range(N):
-                asset_feat = features[:, 0, i, :]  # [B, F]
-                encoded = self.linear_proj(asset_feat)  # [B, d_model]
+                # Average over the window dimension
+                asset_feat = features[:, :, i, :]  # [B, W, F]
+                asset_feat_avg = asset_feat.mean(dim=1)  # [B, F] - average over time
+                encoded = self.linear_proj(asset_feat_avg)  # [B, d_model]
                 encoded = F.relu(encoded)
                 asset_encodings.append(encoded)
             
@@ -80,11 +83,13 @@ class TimeCNNEncoder(nn.Module):
         if kernel_size < 1:
             kernel_size = 1
         
-        # For kernel_size=1, use padding=0; otherwise use padding to maintain length
+        # Use 'same' padding to maintain sequence length through all conv layers
+        # For kernel_size=1, padding=0 is equivalent to 'same'
         if kernel_size == 1:
             padding = 0
         else:
-            padding = kernel_size // 2
+            # Use 'same' padding mode to ensure output length = input length
+            padding = 'same'
         
         # Build conv layers if needed
         if self.conv_layers is None or not hasattr(self, '_last_kernel_size') or self._last_kernel_size != kernel_size:
@@ -121,8 +126,16 @@ class TimeCNNEncoder(nn.Module):
             # 转换为 [B, F, W] 用于Conv1d
             asset_feat = asset_feat.permute(0, 2, 1)  # [B, F, W]
 
-            # 卷积编码
-            encoded = self.conv_layers(asset_feat)  # [B, d_model, W']
+            try:
+                # 卷积编码
+                encoded = self.conv_layers(asset_feat)  # [B, d_model, W']
+            except RuntimeError as e:
+                # Provide detailed error message for debugging
+                raise RuntimeError(
+                    f"Conv1d failed with input shape {asset_feat.shape}, "
+                    f"kernel_size={kernel_size}, padding={padding}, "
+                    f"window_size={W}. Original error: {e}"
+                )
 
             # 全局池化
             pooled = pool(encoded).squeeze(-1)  # [B, d_model]
