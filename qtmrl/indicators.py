@@ -108,11 +108,20 @@ def calculate_bbands(df: pd.DataFrame, period: int, std: float) -> pd.DataFrame:
         包含布林带指标的DataFrame
     """
     bbands = ta.bbands(df["Close"], length=period, std=std)
-    if bbands is not None:
-        # 重命名列
-        bbands = bbands[[f"BBL_{period}_{std}", f"BBM_{period}_{std}", f"BBU_{period}_{std}"]]
-        bbands.columns = ["BB_lower", "BB_middle", "BB_upper"]
-        return bbands
+    if bbands is not None and len(bbands.columns) >= 3:
+        # pandas_ta返回的列名格式可能是BBL_20_2, BBM_20_2, BBU_20_2 (整数)
+        # 或 BBL_20_2.0, BBM_20_2.0, BBU_20_2.0 (浮点数)
+        # 我们需要找到包含BBL, BBM, BBU的列
+        cols = bbands.columns.tolist()
+        lower_col = [c for c in cols if 'BBL' in c][0] if any('BBL' in c for c in cols) else cols[0]
+        middle_col = [c for c in cols if 'BBM' in c][0] if any('BBM' in c for c in cols) else cols[1]
+        upper_col = [c for c in cols if 'BBU' in c][0] if any('BBU' in c for c in cols) else cols[2]
+
+        result = pd.DataFrame(index=df.index)
+        result["BB_lower"] = bbands[lower_col]
+        result["BB_middle"] = bbands[middle_col]
+        result["BB_upper"] = bbands[upper_col]
+        return result
     else:
         return pd.DataFrame(
             index=df.index, columns=["BB_lower", "BB_middle", "BB_upper"]
@@ -133,22 +142,34 @@ def calculate_ichimoku(
     Returns:
         包含一目均衡表指标的DataFrame
     """
-    ichimoku = ta.ichimoku(
-        df["High"], df["Low"], df["Close"], tenkan=tenkan, kijun=kijun, senkou=senkou
-    )
-    if ichimoku is not None and len(ichimoku) > 0:
-        # 选择主要列
-        result = pd.DataFrame(index=df.index)
-        result["ICHI_tenkan"] = ichimoku[0][f"ITS_{tenkan}"]
-        result["ICHI_kijun"] = ichimoku[0][f"IKS_{kijun}"]
-        result["ICHI_senkou_a"] = ichimoku[0][f"ISA_{tenkan}"]
-        result["ICHI_senkou_b"] = ichimoku[0][f"ISB_{kijun}"]
-        return result
-    else:
-        return pd.DataFrame(
-            index=df.index,
-            columns=["ICHI_tenkan", "ICHI_kijun", "ICHI_senkou_a", "ICHI_senkou_b"],
+    try:
+        ichimoku = ta.ichimoku(
+            df["High"], df["Low"], df["Close"], tenkan=tenkan, kijun=kijun, senkou=senkou
         )
+        if ichimoku is not None and len(ichimoku) > 0:
+            # pandas_ta的ichimoku返回格式可能不同，使用列搜索
+            ichi_df = ichimoku[0] if isinstance(ichimoku, list) else ichimoku
+            cols = ichi_df.columns.tolist()
+
+            result = pd.DataFrame(index=df.index)
+            # 查找包含ITS, IKS, ISA, ISB的列
+            its_col = [c for c in cols if 'ITS' in c or 'TENKAN' in c.upper()]
+            iks_col = [c for c in cols if 'IKS' in c or 'KIJUN' in c.upper()]
+            isa_col = [c for c in cols if 'ISA' in c or 'SENKOU_A' in c.upper() or 'SPAN_A' in c.upper()]
+            isb_col = [c for c in cols if 'ISB' in c or 'SENKOU_B' in c.upper() or 'SPAN_B' in c.upper()]
+
+            result["ICHI_tenkan"] = ichi_df[its_col[0]] if its_col else np.nan
+            result["ICHI_kijun"] = ichi_df[iks_col[0]] if iks_col else np.nan
+            result["ICHI_senkou_a"] = ichi_df[isa_col[0]] if isa_col else np.nan
+            result["ICHI_senkou_b"] = ichi_df[isb_col[0]] if isb_col else np.nan
+            return result
+    except:
+        pass
+
+    return pd.DataFrame(
+        index=df.index,
+        columns=["ICHI_tenkan", "ICHI_kijun", "ICHI_senkou_a", "ICHI_senkou_b"],
+    )
 
 
 def calculate_heikin_ashi(df: pd.DataFrame) -> pd.DataFrame:
@@ -183,18 +204,26 @@ def calculate_supertrend(
     Returns:
         包含SuperTrend指标的DataFrame
     """
-    supertrend = ta.supertrend(
-        df["High"], df["Low"], df["Close"], length=period, multiplier=multiplier
-    )
-    if supertrend is not None:
-        result = pd.DataFrame(index=df.index)
-        result["SUPERTREND"] = supertrend[f"SUPERT_{period}_{multiplier}"]
-        result["SUPERTREND_direction"] = supertrend[f"SUPERTd_{period}_{multiplier}"]
-        return result
-    else:
-        return pd.DataFrame(
-            index=df.index, columns=["SUPERTREND", "SUPERTREND_direction"]
+    try:
+        supertrend = ta.supertrend(
+            df["High"], df["Low"], df["Close"], length=period, multiplier=multiplier
         )
+        if supertrend is not None and len(supertrend.columns) >= 2:
+            cols = supertrend.columns.tolist()
+            # 查找包含SUPERT的列（主值和方向）
+            supert_col = [c for c in cols if 'SUPERT_' in c and 'd' not in c]
+            supertd_col = [c for c in cols if 'SUPERTd' in c or 'SUPERT_D' in c]
+
+            result = pd.DataFrame(index=df.index)
+            result["SUPERTREND"] = supertrend[supert_col[0]] if supert_col else np.nan
+            result["SUPERTREND_direction"] = supertrend[supertd_col[0]] if supertd_col else np.nan
+            return result
+    except:
+        pass
+
+    return pd.DataFrame(
+        index=df.index, columns=["SUPERTREND", "SUPERTREND_direction"]
+    )
 
 
 def calculate_all_indicators(

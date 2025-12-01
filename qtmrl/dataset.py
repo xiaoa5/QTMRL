@@ -120,7 +120,7 @@ class StockDataset:
 
             # 价格前向填充
             price_cols = ["Open", "High", "Low", "Close"]
-            asset_data[price_cols] = asset_data[price_cols].fillna(method="ffill")
+            asset_data[price_cols] = asset_data[price_cols].ffill()
 
             # Volume缺失填0
             asset_data["Volume"] = asset_data["Volume"].fillna(0)
