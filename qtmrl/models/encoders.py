@@ -14,6 +14,7 @@ class TimeCNNEncoder(nn.Module):
         d_model: int = 128,
         n_layers: int = 3,
         dropout: float = 0.0,
+        kernel_size: int = 3,
     ):
         """初始化编码器
 
@@ -23,38 +24,24 @@ class TimeCNNEncoder(nn.Module):
             d_model: 模型维度
             n_layers: 卷积层数
             dropout: Dropout比例
+            kernel_size: 卷积核大小（默认3，会根据输入自动调整）
         """
         super().__init__()
 
         self.n_assets = n_assets
         self.n_features = n_features
         self.d_model = d_model
-
-        # 对每个资产独立编码
-        # 输入: [B, W, F] -> 输出: [B, d_model]
-        layers = []
-
-        # 第一层
-        layers.append(nn.Conv1d(n_features, d_model, kernel_size=3, padding=1))
-        layers.append(nn.ReLU())
-        if dropout > 0:
-            layers.append(nn.Dropout(dropout))
-
-        # 中间层
-        for _ in range(n_layers - 1):
-            layers.append(nn.Conv1d(d_model, d_model, kernel_size=3, padding=1))
-            layers.append(nn.ReLU())
-            if dropout > 0:
-                layers.append(nn.Dropout(dropout))
-
-        self.conv_layers = nn.Sequential(*layers)
-
-        # 全局平均池化
-        self.pool = nn.AdaptiveAvgPool1d(1)
+        self.base_kernel_size = kernel_size
+        self.n_layers = n_layers
+        self.dropout = dropout
 
         # 位置和现金信息融合
         self.pos_embed = nn.Linear(1, d_model // 4)
         self.cash_embed = nn.Linear(1, d_model // 4)
+        
+        # Note: Conv layers will be created dynamically in forward pass
+        # to handle variable window sizes during validation
+        self.conv_layers = None
 
     def forward(self, features, positions, cash):
         """前向传播
@@ -71,6 +58,41 @@ class TimeCNNEncoder(nn.Module):
         assert N == self.n_assets
         assert n_feat == self.n_features
 
+        # Dynamically create conv layers if not already created or if window size changed
+        # Adjust kernel size based on window size to prevent errors
+        kernel_size = min(self.base_kernel_size, W)
+        if kernel_size < 1:
+            kernel_size = 1
+        
+        # Calculate padding to maintain sequence length
+        padding = kernel_size // 2
+        
+        # Build conv layers if needed
+        if self.conv_layers is None or not hasattr(self, '_last_kernel_size') or self._last_kernel_size != kernel_size:
+            layers = []
+            
+            # 第一层
+            layers.append(nn.Conv1d(self.n_features, self.d_model, kernel_size=kernel_size, padding=padding))
+            layers.append(nn.ReLU())
+            if self.dropout > 0:
+                layers.append(nn.Dropout(self.dropout))
+            
+            # 中间层
+            for _ in range(self.n_layers - 1):
+                layers.append(nn.Conv1d(self.d_model, self.d_model, kernel_size=kernel_size, padding=padding))
+                layers.append(nn.ReLU())
+                if self.dropout > 0:
+                    layers.append(nn.Dropout(self.dropout))
+            
+            self.conv_layers = nn.Sequential(*layers)
+            self._last_kernel_size = kernel_size
+            
+            # Move to same device as input
+            self.conv_layers = self.conv_layers.to(features.device)
+        
+        # 全局平均池化
+        pool = nn.AdaptiveAvgPool1d(1)
+
         # 对每个资产独立编码
         asset_encodings = []
         for i in range(N):
@@ -84,7 +106,7 @@ class TimeCNNEncoder(nn.Module):
             encoded = self.conv_layers(asset_feat)  # [B, d_model, W]
 
             # 全局池化
-            pooled = self.pool(encoded).squeeze(-1)  # [B, d_model]
+            pooled = pool(encoded).squeeze(-1)  # [B, d_model]
 
             # 融合持仓信息
             pos_emb = self.pos_embed(positions[:, i:i+1])  # [B, d_model//4]
