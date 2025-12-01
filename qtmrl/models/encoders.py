@@ -67,9 +67,9 @@ class TimeCNNEncoder(nn.Module):
         Returns:
             [B, N, d_model] 编码后的资产表示
         """
-        B, W, N, F = features.shape
+        B, W, N, n_feat = features.shape
         assert N == self.n_assets
-        assert F == self.n_features
+        assert n_feat == self.n_features
 
         # 对每个资产独立编码
         asset_encodings = []
@@ -157,12 +157,12 @@ class TransformerEncoder(nn.Module):
         Returns:
             [B, N, d_model] 编码后的资产表示
         """
-        B, W, N, F = features.shape
+        B, W, N, n_feat = features.shape
 
         # 对每个资产独立编码
         asset_encodings = []
         for i in range(N):
-            # 提取单个资产的特征 [B, W, F]
+            # 提取单个资产的特征 [B, W, n_feat]
             asset_feat = features[:, :, i, :]
 
             # 投影到d_model维度
