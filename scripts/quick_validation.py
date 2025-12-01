@@ -83,11 +83,12 @@ def validate_data_preprocessing():
             assets=["AAPL", "MSFT"],
             start_date="2023-01-01",
             end_date="2024-01-01",
-            cache_dir="data/cache"
+            data_dir="data/cache"
         )
 
         print_status("Downloading data from yfinance...")
-        df = dataset.load()
+        data_dict = dataset.download_data()
+        df = dataset.align_data()
 
         if df is None or len(df) == 0:
             print_status("Data download failed", "error")
@@ -133,9 +134,7 @@ def validate_training():
         # Load quick test config if exists, otherwise use minimal settings
         config_path = Path("configs/quick_test.yaml")
         if config_path.exists():
-            from qtmrl.utils import Config
-            config = Config()
-            config.update(load_config(config_path))
+            config = load_config(config_path)
             # Override for even faster validation
             config.train.total_steps = 100
             config.train.n_envs = 1
@@ -181,27 +180,42 @@ def validate_training():
             assets=config.data.assets[:2],  # Use only 2 assets
             start_date=config.data.start_date,
             end_date=config.data.end_date,
-            cache_dir="data/cache"
+            data_dir="data/cache"
         )
 
-        df = dataset.load()
+        data_dict = dataset.download_data()
+        df = dataset.align_data()
         df = calculate_all_indicators(df)
-        train_df, _, _ = dataset.split_data(df, train_ratio=0.8, val_ratio=0.1)
 
-        # Prepare arrays
-        train_states, train_price_changes = dataset.prepare_arrays(
-            train_df,
-            window=config.data.window
-        )
+        # Split data
+        total_len = len(df)
+        train_end = int(total_len * 0.8)
+        train_df = df.iloc[:train_end]
 
-        print_status(f"Training data: {train_states.shape}", "success")
+        # Prepare arrays from script/preprocess.py logic
+        # Extract features and prices
+        feature_cols = [col for col in train_df.columns if col not in ['date', 'asset', 'Open', 'High', 'Low', 'Close', 'Volume']]
+        train_features = train_df[feature_cols].values
+        train_close = train_df['Close'].values
+        train_dates = train_df['date'].values
+
+        # Reshape to [T, N, F]
+        n_assets = len(config.data.assets[:2])
+        T = len(train_dates) // n_assets
+        train_X = train_features.reshape(T, n_assets, -1)
+        train_Close = train_close.reshape(T, n_assets)
+        train_dates_arr = train_dates[::n_assets]
+
+        print_status(f"Training data: X={train_X.shape}, Close={train_Close.shape}", "success")
 
         # Create environment
         print_status("Creating training environment...")
         env = TradingEnv(
-            states=train_states,
-            price_changes=train_price_changes,
-            initial_capital=config.env.initial_capital,
+            X=train_X,
+            Close=train_Close,
+            dates=train_dates_arr,
+            window=config.data.window,
+            initial_cash=config.env.initial_capital,
             fee_rate=config.env.fee_rate,
             buy_pct=config.env.buy_pct,
             sell_pct=config.env.sell_pct
@@ -209,8 +223,8 @@ def validate_training():
 
         # Create models
         print_status("Creating models...")
-        n_features = train_states.shape[-1]
-        n_assets = train_states.shape[2]
+        n_features = train_X.shape[-1]
+        n_assets = train_X.shape[1]
 
         actor, critic = create_models(
             n_features=n_features,
@@ -256,11 +270,15 @@ def validate_training():
         print_status("Testing model inference...")
         state = env.reset()
         with torch.no_grad():
-            state_tensor = torch.FloatTensor(state).unsqueeze(0)
-            action_probs = actor(state_tensor)
-            value = critic(state_tensor)
+            features = torch.FloatTensor(state['features']).unsqueeze(0)  # [1, W, N, F]
+            positions = torch.FloatTensor(state['positions']).unsqueeze(0)  # [1, N]
+            cash = torch.FloatTensor(state['cash']).unsqueeze(0)  # [1, 1]
 
-        print_status(f"  Action probs shape: {[p.shape for p in action_probs]}", "info")
+            logits, action_probs = actor(features, positions, cash)
+            value = critic(features, positions, cash)
+
+        print_status(f"  Action logits shape: {logits.shape}", "info")
+        print_status(f"  Action probs shape: {action_probs.shape}", "info")
         print_status(f"  Value shape: {value.shape}", "info")
 
         print_status("Training validation passed", "success")
@@ -283,18 +301,21 @@ def validate_evaluation():
         print_status("Creating test environment...")
 
         # Create dummy data for quick testing
-        n_steps = 100
+        T = 100
         window = 10
         n_assets = 2
         n_features = 10
 
-        states = np.random.randn(n_steps, window, n_assets, n_features)
-        price_changes = np.random.randn(n_steps, n_assets) * 0.01 + 0.0005  # Small positive drift
+        X = np.random.randn(T, n_assets, n_features).astype(np.float32)
+        Close = np.random.rand(T, n_assets).astype(np.float32) * 100 + 50  # Prices around 50-150
+        dates = np.arange(T)
 
         env = TradingEnv(
-            states=states,
-            price_changes=price_changes,
-            initial_capital=10000.0,
+            X=X,
+            Close=Close,
+            dates=dates,
+            window=window,
+            initial_cash=10000.0,
             fee_rate=0.0005,
             buy_pct=0.2,
             sell_pct=0.5
