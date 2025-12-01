@@ -58,14 +58,33 @@ class TimeCNNEncoder(nn.Module):
         assert N == self.n_assets
         assert n_feat == self.n_features
 
+        # For very small windows, use a simpler approach
+        if W == 1:
+            # Use linear projection instead of convolution for single timestep
+            if not hasattr(self, 'linear_proj'):
+                self.linear_proj = nn.Linear(self.n_features, self.d_model).to(features.device)
+            
+            asset_encodings = []
+            for i in range(N):
+                asset_feat = features[:, 0, i, :]  # [B, F]
+                encoded = self.linear_proj(asset_feat)  # [B, d_model]
+                encoded = F.relu(encoded)
+                asset_encodings.append(encoded)
+            
+            encodings = torch.stack(asset_encodings, dim=1)  # [B, N, d_model]
+            return encodings
+
         # Dynamically create conv layers if not already created or if window size changed
         # Adjust kernel size based on window size to prevent errors
         kernel_size = min(self.base_kernel_size, W)
         if kernel_size < 1:
             kernel_size = 1
         
-        # Calculate padding to maintain sequence length
-        padding = kernel_size // 2
+        # For kernel_size=1, use padding=0; otherwise use padding to maintain length
+        if kernel_size == 1:
+            padding = 0
+        else:
+            padding = kernel_size // 2
         
         # Build conv layers if needed
         if self.conv_layers is None or not hasattr(self, '_last_kernel_size') or self._last_kernel_size != kernel_size:
@@ -103,7 +122,7 @@ class TimeCNNEncoder(nn.Module):
             asset_feat = asset_feat.permute(0, 2, 1)  # [B, F, W]
 
             # 卷积编码
-            encoded = self.conv_layers(asset_feat)  # [B, d_model, W]
+            encoded = self.conv_layers(asset_feat)  # [B, d_model, W']
 
             # 全局池化
             pooled = pool(encoded).squeeze(-1)  # [B, d_model]
