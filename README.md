@@ -1,397 +1,236 @@
-# QTMRL - 基于 A2C 的多资产量化交易强化学习系统
+# QTMRL - Quantitative Trading with Multi-asset Reinforcement Learning
 
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+> **⚠️ Note**: This is an **unofficial implementation** of the research paper. This project is not affiliated with the original authors.
 
-QTMRL (Quantitative Trading with Multi-asset Reinforcement Learning) 是一个基于 **A2C (Advantage Actor-Critic)** 算法的多资产量化交易强化学习系统。该系统使用日频OHLCV数据和技术指标，通过factorized multi-head policy学习多资产交易策略，支持共享资金池和组合级奖励。
+**Reference Paper**:
+> **Title**: QTMRL: Quantitative Trading with Multi-asset Reinforcement Learning
+> **Authors**: [Original Authors]
+> **Link**: [Link to Paper/ArXiv]
 
-## 特性
+QTMRL is a multi-asset quantitative trading reinforcement learning system based on the **A2C (Advantage Actor-Critic)** algorithm. It uses daily OHLCV data and technical indicators to learn multi-asset trading strategies via a factorized multi-head policy, supporting shared capital pools and portfolio-level rewards.
 
-- ✅ **完全可复现**: 固定随机种子，自动下载数据，一键运行
-- 📊 **多资产交易**: 支持多只股票同时交易，共享资金池
-- 🧠 **A2C算法**: 基于Advantage Actor-Critic的策略梯度方法
-- 📈 **丰富的技术指标**: SMA, EMA, RSI, MACD, ATR, Bollinger Bands, Ichimoku, SuperTrend等
-- 🔧 **灵活配置**: YAML配置文件，轻松修改参数
-- 📉 **完整评估**: 收益率、夏普比率、波动率、最大回撤等指标
-- 🎨 **可视化**: 净值曲线、回撤曲线、收益率分布、动作分布等
-- 🚀 **Colab支持**: 适配Google Colab环境，支持GPU训练
-- 📝 **Wandb集成**: 支持实验跟踪和可视化
+## 🌟 Features
 
-## 快速开始
+- ✅ **Fully Reproducible**: Fixed random seeds, automated data download, one-click execution.
+- 📊 **Multi-Asset Trading**: Supports simultaneous trading of multiple stocks with a shared capital pool.
+- 🧠 **A2C Algorithm**: Policy gradient method based on Advantage Actor-Critic.
+- 📈 **Rich Technical Indicators**: SMA, EMA, RSI, MACD, ATR, Bollinger Bands, Ichimoku, SuperTrend, etc.
+- 🔧 **Flexible Configuration**: YAML configuration files for easy parameter tuning.
+- 📉 **Comprehensive Evaluation**: Returns, Sharpe Ratio, Volatility, Max Drawdown, etc.
+- 🎨 **Visualization**: Portfolio value curves, drawdown curves, return distributions, action distributions.
+- 🚀 **Colab Support**: Optimized for Google Colab environment with GPU support.
+- 📝 **Wandb Integration**: Supports experiment tracking and visualization.
 
-### 1. 环境要求
+---
+
+## 🚀 Quick Start
+
+### 1. Requirements
 
 - Python 3.8+
-- CUDA (可选，用于GPU加速)
+- CUDA (Optional, for GPU acceleration)
 
-### 2. 安装
+### 2. Installation
 
-#### 本地安装
+#### Local Installation
 
 ```bash
-# 克隆仓库
+# Clone the repository
 git clone https://github.com/yourusername/QTMRL.git
 cd QTMRL
 
-# 安装依赖
+# Install dependencies
 pip install -r requirements.txt
 
-# 或使用开发模式安装
+# Or install in editable mode
 pip install -e .
 ```
 
-#### Google Colab安装
+#### Google Colab Installation
 
 ```python
-# 在Colab notebook中运行
+# Run in a Colab notebook cell
 !git clone https://github.com/yourusername/QTMRL.git
 %cd QTMRL
 !pip install -r requirements.txt
 ```
 
-### 3. 运行完整流程
+### 3. Run the Full Pipeline
 
-#### 步骤 1: 数据预处理
+#### Step 1: Data Preprocessing
 
-下载股票数据并计算技术指标：
+Download stock data and calculate technical indicators:
 
 ```bash
-# 使用默认配置（16只股票，2014-2024）
-python scripts/preprocess.py --config configs/default.yaml
-
-# 或使用快速测试配置（4只股票，2022-2024）
+# Use quick test configuration (4 stocks, 2022-2024) - Recommended for first run
 python scripts/preprocess.py --config configs/quick_test.yaml
+
+# Or use default configuration (16 stocks, 2014-2024)
+python scripts/preprocess.py --config configs/default.yaml
 ```
 
-处理后的数据将保存在 `data/processed/` 目录。
+Processed data will be saved in the `data/processed/` directory.
 
-#### 步骤 2: 训练模型
+#### Step 2: Validation (Optional but Recommended)
+
+Verify that the training pipeline works correctly before starting a long training session:
 
 ```bash
-# 完整训练（1M步，约2-3小时）
-python scripts/train.py --config configs/default.yaml
+python scripts/quick_validation.py
+```
 
-# 快速测试（50K步，约10-20分钟）
+#### Step 3: Train Model
+
+```bash
+# Quick Test (50K steps, ~10-20 mins)
 python scripts/train.py --config configs/quick_test.yaml
+
+# Full Training (1M steps, ~2-3 hours)
+python scripts/train.py --config configs/default.yaml
 ```
 
-训练过程中会：
-- 自动保存checkpoint
-- 定期在验证集上评估
-- 记录训练指标（loss, entropy, reward等）
-- 支持Wandb可视化（可选）
+During training, the system will:
+- Automatically save checkpoints to `checkpoints/` or `runs/`.
+- Periodically evaluate on the validation set.
+- Log training metrics (loss, entropy, reward, etc.).
 
-#### 步骤 3: 评估模型
+#### Step 4: Evaluate Model
+
+You can evaluate a trained model or test the pipeline with a random policy.
+
+**Evaluate Trained Model:**
 
 ```bash
-# 在测试集上评估
 python scripts/evaluate.py \
-    --config configs/default.yaml \
-    --model runs/final_model.pth \
-    --split test \
-    --save-plots
-```
-
-评估结果包括：
-- 总收益率、年化收益率
-- 夏普比率、年化夏普比率
-- 波动率、年化波动率
-- 最大回撤
-- 可视化图表
-
-## 配置说明
-
-### 默认配置 (`configs/default.yaml`)
-
-```yaml
-# 资产列表（16只美股）
-assets: [AAPL, MSFT, NVDA, CVX, OXY, AAL, UAL, DAL, CCL, RCL, WYNN, LVS, AXP, BAC, JNJ, GOOGL]
-
-# 数据分割（2014-2024）
-split:
-  train: ["2014-01-02", "2019-12-31"]  # 6年
-  valid: ["2020-01-02", "2022-12-31"]  # 3年
-  test:  ["2023-01-02", "2024-12-31"]  # 2年
-
-# 交易参数
-window: 20              # 状态窗口长度
-fee_rate: 0.0005       # 手续费率 0.05%
-buy_pct: 0.20          # 买入使用20%现金
-sell_pct: 0.50         # 卖出50%持仓
-initial_cash: 100000   # 初始资金 $100,000
-
-# 模型参数
-model:
-  encoder: "TimeCNN"   # 编码器类型
-  d_model: 128         # 模型维度
-  n_layers: 3          # 层数
-
-# 训练参数
-train:
-  total_env_steps: 1000000  # 总步数
-  rollout_steps: 50         # Rollout步数
-  gamma: 0.96               # 折扣因子
-  entropy_coef: 0.05        # 熵系数
-  lr_actor: 1.0e-5          # Actor学习率
-  lr_critic: 1.0e-5         # Critic学习率
-```
-
-### 快速测试配置 (`configs/quick_test.yaml`)
-
-用于快速验证代码的配置：
-- 4只股票
-- 2022-2024数据
-- 50K训练步数
-- 更小的模型
-
-## 项目结构
-
-```
-QTMRL/
-├── configs/                    # 配置文件
-│   ├── default.yaml           # 默认配置
-│   └── quick_test.yaml        # 快速测试配置
-├── data/                       # 数据目录
-│   ├── raw/                   # 原始数据
-│   └── processed/             # 处理后的数据
-├── qtmrl/                      # 核心代码
-│   ├── indicators.py          # 技术指标计算
-│   ├── dataset.py             # 数据集管理
-│   ├── env.py                 # 交易环境
-│   ├── models/                # 模型定义
-│   │   ├── encoders.py        # 编码器
-│   │   └── actor_critic.py    # Actor-Critic
-│   ├── algo/                  # 算法实现
-│   │   ├── rollout.py         # Rollout缓冲区
-│   │   └── a2c.py             # A2C训练器
-│   ├── eval/                  # 评估模块
-│   │   ├── metrics.py         # 指标计算
-│   │   ├── backtest.py        # 回测
-│   │   └── plots.py           # 可视化
-│   └── utils/                 # 工具函数
-│       ├── seed.py            # 随机种子
-│       ├── config.py          # 配置加载
-│       ├── logging.py         # 日志记录
-│       └── io.py              # 文件读写
-├── scripts/                    # 运行脚本
-│   ├── preprocess.py          # 数据预处理
-│   ├── train.py               # 训练
-│   └── evaluate.py            # 评估
-├── tests/                      # 单元测试
-├── README.md                   # 本文件
-├── requirements.txt            # 依赖列表
-└── setup.py                    # 安装脚本
-```
-
-## 在Google Colab上运行
-
-### 方法1: 命令行脚本（推荐）
-
-```python
-# 1. 安装
-!git clone https://github.com/yourusername/QTMRL.git
-%cd QTMRL
-!pip install -r requirements.txt
-
-# 2. 数据预处理
-!python scripts/preprocess.py --config configs/quick_test.yaml
-
-# 3. 训练（使用GPU）
-!python scripts/train.py --config configs/quick_test.yaml
-
-# 4. 评估
-!python scripts/evaluate.py \
     --config configs/quick_test.yaml \
     --model runs/final_model.pth \
     --split test \
     --save-plots
-
-# 5. 查看结果
-from IPython.display import Image, display
-display(Image('results/test/portfolio_value.png'))
 ```
 
-### 方法2: 挂载Google Drive保存结果
+**Evaluate Random Policy (No Model Required):**
 
-```python
-from google.colab import drive
-drive.mount('/content/drive')
-
-# 将runs目录软链接到Drive
-!ln -s /content/drive/MyDrive/QTMRL_runs runs
+```bash
+# Useful for testing the evaluation pipeline without training
+python scripts/evaluate.py --config configs/quick_test.yaml --save-plots
 ```
 
-## 使用Wandb跟踪实验
-
-1. 首次使用需要登录：
-
-```python
-import wandb
-wandb.login()  # 会提示输入API key
-```
-
-2. 修改配置文件启用Wandb：
-
-```yaml
-logging:
-  use_wandb: true
-  wandb_project: "qtmrl"
-  wandb_entity: "your-username"  # 可选
-```
-
-3. 运行训练，实验会自动上传到Wandb
-
-## 技术细节
-
-### 环境设计
-
-- **状态空间**:
-  - 特征窗口: `[W, N, F]` (W=窗口长度, N=资产数, F=特征数)
-  - 持仓比例: `[N]`
-  - 现金比例: `[1]`
-
-- **动作空间**:
-  - Factorized multi-head: 每个资产独立选择 `{SELL, HOLD, BUY}`
-  - 非联合动作空间，避免组合爆炸
-
-- **交易规则**:
-  - BUY: 使用20%现金买入
-  - SELL: 卖出50%持仓
-  - 手续费: 0.05%（单边）
-  - 禁止做空，禁止负现金
-
-- **奖励函数**: 组合价值收益率 `r_t = (P_t / P_{t-1}) - 1`
-
-### 模型架构
-
-- **编码器**:
-  - TimeCNN: 1D卷积 + 全局池化
-  - Transformer: 多层自注意力机制
-
-- **Actor**:
-  - Multi-head架构，每个资产一个独立的head
-  - 输出: `[N, 3]` 动作logits
-
-- **Critic**:
-  - 全局聚合（跨资产）
-  - 输出: 标量状态价值
-
-### A2C算法
-
-- Rollout收集: 50步
-- 优势函数: TD error
-- 策略梯度 + 熵正则 + 价值函数
-- 梯度裁剪: 1.0
-
-## 数据说明
-
-### 数据来源
-
-使用 `yfinance` 从Yahoo Finance自动下载股票数据：
-- 数据类型: 日频OHLCV（后复权）
-- 时间范围: 2014-2024（默认配置）
-- 股票数量: 16只美股（可配置）
-
-### 技术指标
-
-支持以下技术指标：
-- **趋势指标**: SMA, EMA, Ichimoku
-- **动量指标**: RSI, MACD
-- **波动率指标**: ATR, Bollinger Bands, SuperTrend
-- **形态指标**: Heikin-Ashi
-
-### 数据预处理
-
-1. 下载原始OHLCV数据
-2. 计算技术指标
-3. 按日期分割（train/valid/test）
-4. Z-score标准化（仅在训练集上拟合）
-5. 保存为numpy格式
-
-## 常见问题
-
-### Q1: 如何更换股票池？
-
-修改配置文件中的 `assets` 列表：
-
-```yaml
-assets:
-  - TSLA
-  - AMZN
-  - GOOG
-  - META
-```
-
-### Q2: 如何调整训练时间？
-
-修改 `total_env_steps`：
-
-```yaml
-train:
-  total_env_steps: 500000  # 减少到50万步
-```
-
-### Q3: 训练时内存不足怎么办？
-
-1. 减少资产数量
-2. 减少模型维度 `d_model`
-3. 使用更小的窗口 `window`
-4. 缩短数据时间范围
-
-### Q4: 如何添加新的技术指标？
-
-在 `qtmrl/indicators.py` 中添加新函数，然后在配置文件中启用：
-
-```yaml
-features:
-  indicators:
-    your_indicator: [param1, param2]
-```
-
-### Q5: 如何实现消融实验？
-
-1. 复制配置文件
-2. 修改特定参数
-3. 多次运行train.py
-4. 比较results
-
-## 性能基准
-
-在默认配置下（16只股票，2014-2024数据）：
-
-| 指标 | 训练集 | 验证集 | 测试集 |
-|------|--------|--------|--------|
-| 总收益率 | TBD | TBD | TBD |
-| 夏普比率 | TBD | TBD | TBD |
-| 最大回撤 | TBD | TBD | TBD |
-
-> 注：实际性能取决于随机种子、市场环境等因素
-
-## 贡献
-
-欢迎提交Issue和Pull Request！
-
-## 许可证
-
-MIT License
-
-## 引用
-
-如果使用本项目，请引用原始论文：
-
-```bibtex
-@article{qtmrl2024,
-  title={QTMRL: Quantitative Trading with Multi-asset Reinforcement Learning},
-  author={Your Name},
-  year={2024}
-}
-```
-
-## 联系方式
-
-- 问题反馈: [GitHub Issues](https://github.com/yourusername/QTMRL/issues)
-- 邮件: your.email@example.com
+Evaluation results include:
+- Total Return, Annualized Return
+- Sharpe Ratio, Annualized Sharpe Ratio
+- Volatility, Annualized Volatility
+- Max Drawdown
+- Visualization plots in `results/` directory
 
 ---
 
-**免责声明**: 本项目仅供研究和学习使用，不构成任何投资建议。实际交易中使用本系统需自行承担风险。
+## ⚙️ Configuration
+
+### Default Configuration (`configs/default.yaml`)
+
+```yaml
+# Asset List (16 US Stocks)
+assets: [AAPL, MSFT, NVDA, CVX, OXY, AAL, UAL, DAL, CCL, RCL, WYNN, LVS, AXP, BAC, JNJ, GOOGL]
+
+# Data Split (2014-2024)
+split:
+  train: ["2014-01-02", "2019-12-31"]  # 6 years
+  valid: ["2020-01-02", "2022-12-31"]  # 3 years
+  test:  ["2023-01-02", "2024-12-31"]  # 2 years
+
+# Trading Parameters
+window: 20              # State window length
+fee_rate: 0.0005       # Transaction fee rate 0.05%
+buy_pct: 0.20          # Use 20% of cash for buying
+sell_pct: 0.50         # Sell 50% of position
+initial_cash: 100000   # Initial cash $100,000
+
+# Model Parameters
+model:
+  encoder: "TimeCNN"   # Encoder type: TimeCNN or Transformer
+  d_model: 128         # Model dimension
+  n_layers: 3          # Number of layers
+
+# Training Parameters
+train:
+  total_env_steps: 1000000  # Total steps
+  rollout_steps: 50         # Rollout steps
+  gamma: 0.96               # Discount factor
+  entropy_coef: 0.05        # Entropy coefficient
+  lr_actor: 1.0e-5          # Actor learning rate
+  lr_critic: 1.0e-5         # Critic learning rate
+```
+
+### Quick Test Configuration (`configs/quick_test.yaml`)
+
+Designed for quick verification:
+- 4 Stocks: AAPL, MSFT, NVDA, GOOGL
+- Data Range: 2022-2024
+- Training Steps: 50K
+- Smaller Model: d_model=64, n_layers=2
+
+---
+
+## 🛠 Troubleshooting & Recent Fixes
+
+### Common Issues
+
+**Q: Download failed?**
+A: Check your internet connection. `yfinance` will automatically retry.
+
+**Q: Out of memory?**
+A: Use `quick_test.yaml` or reduce the number of assets and `d_model`.
+
+**Q: "Unexpected keyword argument 'window_size'" error?**
+A: This has been fixed in the latest version. Ensure you are using the updated `qtmrl/models/encoders.py` and `qtmrl/models/actor_critic.py`.
+
+### Recent Improvements
+
+1.  **Robust Window Handling**: Fixed issues with small window sizes causing convolution errors. The system now dynamically adjusts kernel sizes and uses padding to support any window size (W >= 1).
+2.  **Numerical Stability**: Added Xavier initialization and NaN checks to prevent training instability.
+3.  **Evaluation Updates**: `evaluate.py` now supports random policy evaluation (if no model is provided) and correctly handles model loading with dynamic layer initialization.
+4.  **Data Consistency**: Fixed rollout buffer errors caused by variable window sizes at the beginning of episodes.
+
+---
+
+## 📂 Project Structure
+
+```
+QTMRL/
+├── configs/                    # Configuration files
+│   ├── default.yaml           # Default config
+│   └── quick_test.yaml        # Quick test config
+├── data/                       # Data directory
+│   ├── raw/                   # Raw downloaded data
+│   └── processed/             # Preprocessed numpy data
+├── qtmrl/                      # Core package
+│   ├── indicators.py          # Technical indicators
+│   ├── dataset.py             # Dataset management
+│   ├── env.py                 # Trading environment
+│   ├── models/                # Model definitions (Encoders, Actor-Critic)
+│   ├── algo/                  # RL Algorithms (A2C, RolloutBuffer)
+│   ├── eval/                  # Evaluation modules (Backtest, Metrics, Plots)
+│   └── utils/                 # Utilities (Seed, Config, IO)
+├── scripts/                    # Executable scripts
+│   ├── preprocess.py          # Data preprocessing
+│   ├── train.py               # Training loop
+│   ├── evaluate.py            # Evaluation & Visualization
+│   └── quick_validation.py    # System validation script
+├── tests/                      # Unit tests
+├── README.md                   # Original Chinese README
+├── USER_GUIDE_EN.md            # This English Guide
+├── requirements.txt            # Dependencies
+└── setup.py                    # Setup script
+```
+
+---
+
+## 💡 Motivation & Acknowledgements
+
+I was intrigued by the remarkable results presented in the original paper and wanted to reproduce them. However, since the GitHub link provided in the paper was invalid, I decided to implement the system from scratch.
+
+Special thanks to **Claude Code** and **Antigravity** for their powerful assistance, which enabled me to complete this full reproduction in just **two nights**!
+
+## ⚖️ Disclaimer
+
+This project is for research and educational purposes only. It does not constitute investment advice. Use this system for actual trading at your own risk.
