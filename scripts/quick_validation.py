@@ -276,31 +276,37 @@ def validate_training():
         # Create trainer
         print_status("Initializing A2C trainer...")
         trainer = A2CTrainer(
-            env=env,
             actor=actor,
             critic=critic,
-            learning_rate=learning_rate,
+            lr_actor=learning_rate,
+            lr_critic=learning_rate,
             gamma=gamma,
-            ent_coef=ent_coef,
-            vf_coef=vf_coef,
-            max_grad_norm=max_grad_norm,
-            n_steps=min(n_steps, 128)  # Use smaller rollout for speed
+            entropy_coef=ent_coef,
+            value_coef=vf_coef,
+            grad_clip=max_grad_norm
         )
+
+        # Create rollout buffer
+        from qtmrl.algo import RolloutBuffer
+        buffer = RolloutBuffer()
 
         # Run training for minimal steps
         print_status(f"Running training for {total_steps} steps...")
 
-        for step in range(total_steps):
+        rollout_steps = min(n_steps, 128)
+        num_rollouts = total_steps // rollout_steps
+
+        for rollout_idx in range(num_rollouts):
             # Collect rollout
-            rollout = trainer.collect_rollout()
+            rollout_stats = trainer.collect_rollout(env, rollout_steps, buffer)
 
             # Update policy
-            stats = trainer.update(rollout)
+            update_stats = trainer.update(buffer)
 
-            if (step + 1) % 50 == 0:
-                print_status(f"  Step {step+1}/{total_steps}: "
-                           f"loss={stats['loss']:.3f}, "
-                           f"value_loss={stats['value_loss']:.3f}", "info")
+            if (rollout_idx + 1) % 5 == 0:
+                steps_done = (rollout_idx + 1) * rollout_steps
+                print_status(f"  Step {steps_done}/{total_steps}: "
+                           f"avg_reward={rollout_stats.get('avg_reward', 0):.3f}", "info")
 
         print_status("Training completed successfully", "success")
 
