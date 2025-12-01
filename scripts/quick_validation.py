@@ -98,7 +98,13 @@ def validate_data_preprocessing():
 
         # Calculate indicators
         print_status("Calculating technical indicators...")
-        df_with_indicators = calculate_all_indicators(df)
+        # Create a simple indicator config
+        indicator_config = {
+            "sma": [10, 20],
+            "ema": [12, 26],
+            "rsi": [14]
+        }
+        df_with_indicators = calculate_all_indicators(df, indicator_config)
 
         if df_with_indicators is None or len(df_with_indicators) == 0:
             print_status("Indicator calculation failed", "error")
@@ -135,57 +141,72 @@ def validate_training():
         config_path = Path("configs/quick_test.yaml")
         if config_path.exists():
             config = load_config(config_path)
-            # Override for even faster validation
-            config.train.total_steps = 100
-            config.train.n_envs = 1
-        else:
-            # Create minimal config programmatically
-            class MinimalConfig:
-                def __init__(self):
-                    self.data = type('obj', (object,), {
-                        'assets': ['AAPL', 'MSFT'],
-                        'start_date': '2023-01-01',
-                        'end_date': '2024-01-01',
-                        'window': 10,
-                        'indicators': ['sma', 'ema', 'rsi']
-                    })
-                    self.env = type('obj', (object,), {
-                        'initial_capital': 10000.0,
-                        'fee_rate': 0.0005,
-                        'buy_pct': 0.2,
-                        'sell_pct': 0.5
-                    })
-                    self.model = type('obj', (object,), {
-                        'd_model': 64,
-                        'n_heads': 2,
-                        'n_layers': 2,
-                        'dropout': 0.1
-                    })
-                    self.train = type('obj', (object,), {
-                        'total_steps': 100,
-                        'n_envs': 1,
-                        'n_steps': 128,
-                        'learning_rate': 0.0003,
-                        'gamma': 0.99,
-                        'ent_coef': 0.01,
-                        'vf_coef': 0.5,
-                        'max_grad_norm': 0.5
-                    })
+            # Extract parameters from config structure
+            assets = config.assets[:2]  # Top-level assets
+            start_date = config.split.train[0]
+            end_date = config.split.train[1]
+            window = config.window
+            initial_cash = config.initial_cash
+            fee_rate = config.fee_rate
+            buy_pct = config.buy_pct
+            sell_pct = config.sell_pct
+            indicator_config = config.features.indicators.to_dict()
 
-            config = MinimalConfig()
+            # Model params
+            d_model = config.model.d_model
+            n_layers = config.model.n_layers
+            dropout = config.model.dropout
+            n_heads = 2  # Not in config, use default
+
+            # Training params
+            total_steps = 100  # Override for fast validation
+            learning_rate = config.train.lr_actor
+            gamma = config.train.gamma
+            ent_coef = config.train.entropy_coef
+            vf_coef = config.train.value_coef
+            max_grad_norm = config.train.grad_clip
+            n_steps = config.train.rollout_steps
+        else:
+            # Create minimal config
+            assets = ['AAPL', 'MSFT']
+            start_date = '2023-01-01'
+            end_date = '2024-01-01'
+            window = 10
+            initial_cash = 10000.0
+            fee_rate = 0.0005
+            buy_pct = 0.2
+            sell_pct = 0.5
+            indicator_config = {
+                'sma': [10, 20],
+                'ema': [12, 26],
+                'rsi': [14]
+            }
+
+            d_model = 64
+            n_heads = 2
+            n_layers = 2
+            dropout = 0.1
+
+            total_steps = 100
+            learning_rate = 0.0003
+            gamma = 0.99
+            ent_coef = 0.01
+            vf_coef = 0.5
+            max_grad_norm = 0.5
+            n_steps = 128
 
         # Create dataset (reuse from previous test if possible)
         print_status("Preparing training data...")
         dataset = StockDataset(
-            assets=config.data.assets[:2],  # Use only 2 assets
-            start_date=config.data.start_date,
-            end_date=config.data.end_date,
+            assets=assets,
+            start_date=start_date,
+            end_date=end_date,
             data_dir="data/cache"
         )
 
         data_dict = dataset.download_data()
         df = dataset.align_data()
-        df = calculate_all_indicators(df)
+        df = calculate_all_indicators(df, indicator_config)
 
         # Split data
         total_len = len(df)
@@ -200,11 +221,11 @@ def validate_training():
         train_dates = train_df['date'].values
 
         # Reshape to [T, N, F]
-        n_assets = len(config.data.assets[:2])
-        T = len(train_dates) // n_assets
-        train_X = train_features.reshape(T, n_assets, -1)
-        train_Close = train_close.reshape(T, n_assets)
-        train_dates_arr = train_dates[::n_assets]
+        n_assets_count = len(assets)
+        T = len(train_dates) // n_assets_count
+        train_X = train_features.reshape(T, n_assets_count, -1)
+        train_Close = train_close.reshape(T, n_assets_count)
+        train_dates_arr = train_dates[::n_assets_count]
 
         print_status(f"Training data: X={train_X.shape}, Close={train_Close.shape}", "success")
 
@@ -214,25 +235,25 @@ def validate_training():
             X=train_X,
             Close=train_Close,
             dates=train_dates_arr,
-            window=config.data.window,
-            initial_cash=config.env.initial_capital,
-            fee_rate=config.env.fee_rate,
-            buy_pct=config.env.buy_pct,
-            sell_pct=config.env.sell_pct
+            window=window,
+            initial_cash=initial_cash,
+            fee_rate=fee_rate,
+            buy_pct=buy_pct,
+            sell_pct=sell_pct
         )
 
         # Create models
         print_status("Creating models...")
         n_features = train_X.shape[-1]
-        n_assets = train_X.shape[1]
+        n_assets_model = train_X.shape[1]
 
         actor, critic = create_models(
             n_features=n_features,
-            n_assets=n_assets,
-            d_model=config.model.d_model,
-            n_heads=config.model.n_heads,
-            n_layers=config.model.n_layers,
-            dropout=config.model.dropout
+            n_assets=n_assets_model,
+            d_model=d_model,
+            n_heads=n_heads,
+            n_layers=n_layers,
+            dropout=dropout
         )
 
         # Create trainer
@@ -241,18 +262,18 @@ def validate_training():
             env=env,
             actor=actor,
             critic=critic,
-            learning_rate=config.train.learning_rate,
-            gamma=config.train.gamma,
-            ent_coef=config.train.ent_coef,
-            vf_coef=config.train.vf_coef,
-            max_grad_norm=config.train.max_grad_norm,
-            n_steps=min(config.train.n_steps, 128)  # Use smaller rollout for speed
+            learning_rate=learning_rate,
+            gamma=gamma,
+            ent_coef=ent_coef,
+            vf_coef=vf_coef,
+            max_grad_norm=max_grad_norm,
+            n_steps=min(n_steps, 128)  # Use smaller rollout for speed
         )
 
         # Run training for minimal steps
-        print_status(f"Running training for {config.train.total_steps} steps...")
+        print_status(f"Running training for {total_steps} steps...")
 
-        for step in range(config.train.total_steps):
+        for step in range(total_steps):
             # Collect rollout
             rollout = trainer.collect_rollout()
 
@@ -260,7 +281,7 @@ def validate_training():
             stats = trainer.update(rollout)
 
             if (step + 1) % 50 == 0:
-                print_status(f"  Step {step+1}/{config.train.total_steps}: "
+                print_status(f"  Step {step+1}/{total_steps}: "
                            f"loss={stats['loss']:.3f}, "
                            f"value_loss={stats['value_loss']:.3f}", "info")
 
@@ -334,7 +355,8 @@ def validate_evaluation():
 
         # Calculate metrics
         print_status("Calculating evaluation metrics...")
-        metrics = calculate_all_metrics(env, annualized=True)
+        portfolio_values = np.array(env.portfolio_values)
+        metrics = calculate_all_metrics(portfolio_values, annualize=True)
 
         print_status(f"  Total Return: {metrics['total_return']:.2%}", "info")
         print_status(f"  Sharpe Ratio: {metrics['sharpe_ratio']:.3f}", "info")
