@@ -4,7 +4,8 @@
 
 **Reference Paper**:
 > **Title**: QTMRL: Quantitative Trading with Multi-asset Reinforcement Learning
-> **Link**:(https://arxiv.org/pdf/2508.20467v1)
+> **Authors**: Xiangdong Liu, Jiahao Chen
+> **Link**: [https://arxiv.org/pdf/2508.20467v1]
 
 QTMRL is a multi-asset quantitative trading reinforcement learning system based on the **A2C (Advantage Actor-Critic)** algorithm. It uses daily OHLCV data and technical indicators to learn multi-asset trading strategies via a factorized multi-head policy, supporting shared capital pools and portfolio-level rewards.
 
