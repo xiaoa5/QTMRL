@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import numpy as np
 import torch
 
-from qtmrl.utils import set_seed, load_config, Logger
+from qtmrl.utils import set_seed, load_config, Config, Logger
 from qtmrl.dataset import StockDataset
 from qtmrl.indicators import calculate_all_indicators
 from qtmrl.env import TradingEnv
@@ -114,8 +114,13 @@ def validate_data_preprocessing():
                            if col not in ['date', 'asset', 'Open', 'High', 'Low', 'Close', 'Volume']])
         print_status(f"Calculated {n_indicators} indicators", "success")
 
-        # Test data splitting
-        train_df, val_df, test_df = dataset.split_data(df_with_indicators, train_ratio=0.6, val_ratio=0.2)
+        # Test data splitting (using simple index-based split for validation)
+        total_len = len(df_with_indicators)
+        train_end = int(total_len * 0.6)
+        val_end = int(total_len * 0.8)
+        train_df = df_with_indicators.iloc[:train_end]
+        val_df = df_with_indicators.iloc[train_end:val_end]
+        test_df = df_with_indicators.iloc[val_end:]
         print_status(f"Data split: train={len(train_df)}, val={len(val_df)}, test={len(test_df)}", "success")
 
         print_status("Data preprocessing validation passed", "success")
@@ -247,13 +252,25 @@ def validate_training():
         n_features = train_X.shape[-1]
         n_assets_model = train_X.shape[1]
 
+        # Create a config object for create_models
+        if config_path.exists():
+            model_config = config
+        else:
+            # Create minimal config with model parameters
+            model_config_dict = {
+                'model': {
+                    'd_model': d_model,
+                    'n_layers': n_layers,
+                    'dropout': dropout,
+                    'encoder': 'TimeCNN'
+                }
+            }
+            model_config = Config(model_config_dict)
+
         actor, critic = create_models(
-            n_features=n_features,
+            config=model_config,
             n_assets=n_assets_model,
-            d_model=d_model,
-            n_heads=n_heads,
-            n_layers=n_layers,
-            dropout=dropout
+            n_features=n_features
         )
 
         # Create trainer
@@ -359,7 +376,7 @@ def validate_evaluation():
         metrics = calculate_all_metrics(portfolio_values, annualize=True)
 
         print_status(f"  Total Return: {metrics['total_return']:.2%}", "info")
-        print_status(f"  Sharpe Ratio: {metrics['sharpe_ratio']:.3f}", "info")
+        print_status(f"  Sharpe Ratio: {metrics['sharpe']:.3f}", "info")
         print_status(f"  Max Drawdown: {metrics['max_drawdown']:.2%}", "info")
         print_status(f"  Volatility: {metrics['volatility']:.2%}", "info")
 
