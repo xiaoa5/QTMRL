@@ -176,7 +176,7 @@ class StockDataset:
             raise ValueError("请先对齐数据")
 
         df = self.aligned_data.copy()
-        df["date"] = pd.to_datetime(df["date"])
+        df["date"] = pd.to_datetime(df["date"], utc=True)
 
         # 分割
         train_df = df[
