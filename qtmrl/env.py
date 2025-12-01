@@ -88,7 +88,22 @@ class TradingEnv:
         # 特征窗口
         start_idx = self.current_step - self.window + 1
         end_idx = self.current_step + 1
-        features = self.X[start_idx:end_idx].copy()  # [W, N, F]
+        
+        # Handle case where start_idx is negative (near beginning of episode)
+        if start_idx < 0:
+            # Pad with zeros at the beginning
+            valid_start = 0
+            valid_features = self.X[valid_start:end_idx].copy()  # [actual_W, N, F]
+            
+            # Calculate padding needed
+            pad_length = -start_idx
+            pad_shape = (pad_length, self.N, self.F)
+            padding = np.zeros(pad_shape, dtype=np.float32)
+            
+            # Concatenate padding and valid features
+            features = np.concatenate([padding, valid_features], axis=0)  # [W, N, F]
+        else:
+            features = self.X[start_idx:end_idx].copy()  # [W, N, F]
 
         # 归一化持仓和现金
         current_prices = self.Close[self.current_step]
