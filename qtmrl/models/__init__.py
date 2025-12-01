@@ -1,4 +1,4 @@
-"""模型模块"""
+"""Model modules"""
 from .encoders import TimeCNNEncoder, TransformerEncoder
 from .actor_critic import MultiHeadActor, Critic, create_models
 

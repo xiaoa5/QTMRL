@@ -1,4 +1,4 @@
-"""评估模块"""
+"""Evaluation modules"""
 from .metrics import calculate_all_metrics, print_metrics
 from .backtest import run_backtest, run_multiple_backtests
 from .plots import (

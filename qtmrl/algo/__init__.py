@@ -1,4 +1,4 @@
-"""A2C算法模块"""
+"""A2C algorithm modules"""
 from .rollout import RolloutBuffer, compute_returns_advantages
 from .a2c import A2CTrainer
 
