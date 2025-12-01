@@ -50,6 +50,50 @@ class TimeCNNEncoder(nn.Module):
         # Note: Conv layers will be created dynamically in forward pass
         # to handle variable window sizes during validation
         self.conv_layers = None
+        
+        # Pre-initialize layers if window_size is provided (e.g. for evaluation)
+        if window_size is not None:
+            self._init_conv_layers(window_size)
+
+    def _init_conv_layers(self, W):
+        """Initialize conv layers based on window size"""
+        # Dynamically create conv layers if not already created or if window size changed
+        # Adjust kernel size based on window size to prevent errors
+        kernel_size = min(self.base_kernel_size, W)
+        if kernel_size < 1:
+            kernel_size = 1
+        
+        # Use 'same' padding to maintain sequence length through all conv layers
+        # For kernel_size=1, padding=0 is equivalent to 'same'
+        if kernel_size == 1:
+            padding = 0
+        else:
+            # Use 'same' padding mode to ensure output length = input length
+            padding = 'same'
+        
+        layers = []
+        
+        # 第一层
+        conv1 = nn.Conv1d(self.n_features, self.d_model, kernel_size=kernel_size, padding=padding)
+        nn.init.xavier_uniform_(conv1.weight)
+        nn.init.zeros_(conv1.bias)
+        layers.append(conv1)
+        layers.append(nn.ReLU())
+        if self.dropout > 0:
+            layers.append(nn.Dropout(self.dropout))
+        
+        # 中间层
+        for _ in range(self.n_layers - 1):
+            conv_layer = nn.Conv1d(self.d_model, self.d_model, kernel_size=kernel_size, padding=padding)
+            nn.init.xavier_uniform_(conv_layer.weight)
+            nn.init.zeros_(conv_layer.bias)
+            layers.append(conv_layer)
+            layers.append(nn.ReLU())
+            if self.dropout > 0:
+                layers.append(nn.Dropout(self.dropout))
+        
+        self.conv_layers = nn.Sequential(*layers)
+        self._last_kernel_size = kernel_size
 
     def forward(self, features, positions, cash):
         """前向传播
