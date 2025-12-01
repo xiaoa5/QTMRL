@@ -143,46 +143,16 @@ class TimeCNNEncoder(nn.Module):
             return encodings
 
         # Dynamically create conv layers if not already created or if window size changed
-        # Adjust kernel size based on window size to prevent errors
         kernel_size = min(self.base_kernel_size, W)
-        if kernel_size < 1:
-            kernel_size = 1
-        
-        # Use 'same' padding to maintain sequence length through all conv layers
-        # For kernel_size=1, padding=0 is equivalent to 'same'
-        if kernel_size == 1:
-            padding = 0
-        else:
-            # Use 'same' padding mode to ensure output length = input length
-            padding = 'same'
+        if kernel_size < 1: kernel_size = 1
         
         # Build conv layers if needed
         if self.conv_layers is None or not hasattr(self, '_last_kernel_size') or self._last_kernel_size != kernel_size:
-            layers = []
-            
-            # 第一层
-            conv1 = nn.Conv1d(self.n_features, self.d_model, kernel_size=kernel_size, padding=padding)
-            nn.init.xavier_uniform_(conv1.weight)
-            nn.init.zeros_(conv1.bias)
-            layers.append(conv1)
-            layers.append(nn.ReLU())
-            if self.dropout > 0:
-                layers.append(nn.Dropout(self.dropout))
-            
-            # 中间层
-            for _ in range(self.n_layers - 1):
-                conv_layer = nn.Conv1d(self.d_model, self.d_model, kernel_size=kernel_size, padding=padding)
-                nn.init.xavier_uniform_(conv_layer.weight)
-                nn.init.zeros_(conv_layer.bias)
-                layers.append(conv_layer)
-                layers.append(nn.ReLU())
-                if self.dropout > 0:
-                    layers.append(nn.Dropout(self.dropout))
-            
-            self.conv_layers = nn.Sequential(*layers)
-            self._last_kernel_size = kernel_size
-            
+            self._init_conv_layers(W)
             # Move to same device as input
+            self.conv_layers = self.conv_layers.to(features.device)
+        elif self.conv_layers is not None and next(self.conv_layers.parameters()).device != features.device:
+            # Ensure layers are on correct device
             self.conv_layers = self.conv_layers.to(features.device)
         
         # 全局平均池化

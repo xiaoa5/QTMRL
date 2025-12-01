@@ -204,34 +204,6 @@ def create_models(config, n_assets, n_features):
         )
         critic_encoder = TimeCNNEncoder(
             n_assets=n_assets,
-            n_features=n_features,
-            d_model=d_model,
-            n_layers=n_layers,
-            dropout=dropout,
-            window_size=window_size,  # Pass window size for pre-initialization
-        )
-    elif encoder_type == "Transformer":
-        actor_encoder = TransformerEncoder(
-            n_assets=n_assets,
-            n_features=n_features,
-            d_model=d_model,
-            n_layers=n_layers,
-            n_heads=4,
-            dropout=dropout,
-        )
-        critic_encoder = TransformerEncoder(
-            n_assets=n_assets,
-            n_features=n_features,
-            d_model=d_model,
-            n_layers=n_layers,
-            n_heads=4,
-            dropout=dropout,
-        )
-    else:
-        raise ValueError(f"未知的编码器类型: {encoder_type}")
-
-    # 创建Actor和Critic
-    actor = MultiHeadActor(actor_encoder, d_model, n_assets)
     critic = Critic(critic_encoder, d_model, n_assets)
 
     return actor, critic
