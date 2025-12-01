@@ -39,6 +39,12 @@ class TimeCNNEncoder(nn.Module):
         self.pos_embed = nn.Linear(1, d_model // 4)
         self.cash_embed = nn.Linear(1, d_model // 4)
         
+        # Initialize embedding layers
+        nn.init.xavier_uniform_(self.pos_embed.weight)
+        nn.init.zeros_(self.pos_embed.bias)
+        nn.init.xavier_uniform_(self.cash_embed.weight)
+        nn.init.zeros_(self.cash_embed.bias)
+        
         # Note: Conv layers will be created dynamically in forward pass
         # to handle variable window sizes during validation
         self.conv_layers = None
@@ -64,14 +70,27 @@ class TimeCNNEncoder(nn.Module):
             # Use linear projection instead of convolution for very small windows
             if not hasattr(self, 'linear_proj'):
                 self.linear_proj = nn.Linear(self.n_features, self.d_model).to(features.device)
+                # Properly initialize the weights
+                nn.init.xavier_uniform_(self.linear_proj.weight)
+                nn.init.zeros_(self.linear_proj.bias)
             
             asset_encodings = []
             for i in range(N):
                 # Average over the window dimension
                 asset_feat = features[:, :, i, :]  # [B, W, F]
                 asset_feat_avg = asset_feat.mean(dim=1)  # [B, F] - average over time
+                
+                # Check for NaN in input
+                if torch.isnan(asset_feat_avg).any():
+                    # Replace NaN with zeros
+                    asset_feat_avg = torch.nan_to_num(asset_feat_avg, nan=0.0)
+                
                 encoded = self.linear_proj(asset_feat_avg)  # [B, d_model]
                 encoded = F.relu(encoded)
+                
+                # Clamp to prevent extreme values
+                encoded = torch.clamp(encoded, min=-10.0, max=10.0)
+                
                 asset_encodings.append(encoded)
             
             encodings = torch.stack(asset_encodings, dim=1)  # [B, N, d_model]
@@ -96,14 +115,20 @@ class TimeCNNEncoder(nn.Module):
             layers = []
             
             # 第一层
-            layers.append(nn.Conv1d(self.n_features, self.d_model, kernel_size=kernel_size, padding=padding))
+            conv1 = nn.Conv1d(self.n_features, self.d_model, kernel_size=kernel_size, padding=padding)
+            nn.init.xavier_uniform_(conv1.weight)
+            nn.init.zeros_(conv1.bias)
+            layers.append(conv1)
             layers.append(nn.ReLU())
             if self.dropout > 0:
                 layers.append(nn.Dropout(self.dropout))
             
             # 中间层
             for _ in range(self.n_layers - 1):
-                layers.append(nn.Conv1d(self.d_model, self.d_model, kernel_size=kernel_size, padding=padding))
+                conv_layer = nn.Conv1d(self.d_model, self.d_model, kernel_size=kernel_size, padding=padding)
+                nn.init.xavier_uniform_(conv_layer.weight)
+                nn.init.zeros_(conv_layer.bias)
+                layers.append(conv_layer)
                 layers.append(nn.ReLU())
                 if self.dropout > 0:
                     layers.append(nn.Dropout(self.dropout))
@@ -123,22 +148,36 @@ class TimeCNNEncoder(nn.Module):
             # 提取单个资产的特征 [B, W, F]
             asset_feat = features[:, :, i, :]  # [B, W, F]
 
+            # Check for NaN in input
+            if torch.isnan(asset_feat).any():
+                asset_feat = torch.nan_to_num(asset_feat, nan=0.0)
+
             # 转换为 [B, F, W] 用于Conv1d
             asset_feat = asset_feat.permute(0, 2, 1)  # [B, F, W]
 
             try:
                 # 卷积编码
                 encoded = self.conv_layers(asset_feat)  # [B, d_model, W']
+                
+                # Check for NaN after convolution
+                if torch.isnan(encoded).any():
+                    raise RuntimeError(f"NaN detected after convolution for asset {i}")
+                
             except RuntimeError as e:
                 # Provide detailed error message for debugging
                 raise RuntimeError(
                     f"Conv1d failed with input shape {asset_feat.shape}, "
                     f"kernel_size={kernel_size}, padding={padding}, "
-                    f"window_size={W}. Original error: {e}"
+                    f"window_size={W}. Input stats: min={asset_feat.min():.4f}, "
+                    f"max={asset_feat.max():.4f}, mean={asset_feat.mean():.4f}. "
+                    f"Original error: {e}"
                 )
 
             # 全局池化
             pooled = pool(encoded).squeeze(-1)  # [B, d_model]
+            
+            # Clamp to prevent extreme values
+            pooled = torch.clamp(pooled, min=-10.0, max=10.0)
 
             # 融合持仓信息
             pos_emb = self.pos_embed(positions[:, i:i+1])  # [B, d_model//4]
