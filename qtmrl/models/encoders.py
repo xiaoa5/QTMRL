@@ -15,6 +15,7 @@ class TimeCNNEncoder(nn.Module):
         n_layers: int = 3,
         dropout: float = 0.0,
         kernel_size: int = 3,
+        window_size: int = None,  # Added window_size argument
     ):
         """初始化编码器
 
@@ -25,6 +26,7 @@ class TimeCNNEncoder(nn.Module):
             n_layers: 卷积层数
             dropout: Dropout比例
             kernel_size: 卷积核大小（默认3，会根据输入自动调整）
+            window_size: 窗口大小（可选，如果提供则预初始化层）
         """
         super().__init__()
 
