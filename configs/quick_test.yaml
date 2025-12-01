@@ -1,0 +1,79 @@
+# QTMRL 快速测试配置 - 用于验证代码可运行性
+seed: 42
+
+# 资产列表（减少到4只股票以加快速度）
+assets:
+  - AAPL
+  - MSFT
+  - NVDA
+  - GOOGL
+
+# 时间窗口和交易参数
+window: 20
+fee_rate: 0.0005
+buy_pct: 0.20
+sell_pct: 0.50
+initial_cash: 100000
+
+# 数据分割（缩短时间范围）
+split:
+  train: ["2022-01-02", "2023-06-30"]  # 1.5年训练
+  valid: ["2023-07-01", "2023-12-31"]  # 0.5年验证
+  test:  ["2024-01-02", "2024-12-31"]  # 1年测试
+
+# 特征配置（简化指标）
+features:
+  ohlcv: true
+  indicators:
+    sma: [10, 20]              # 只用2个SMA
+    ema: [12, 26]
+    rsi: [14]
+    macd: [12, 26, 9]
+    atr: [14]
+    bbands: [20, 2.0]
+
+normalization:
+  method: zscore
+  fit_on: "train"
+  include: ["OHLCV", "indicators"]
+
+state:
+  include_pos: true
+  include_cash: true
+
+# 模型配置（更小的模型）
+model:
+  encoder: "TimeCNN"
+  d_model: 64          # 减小维度
+  n_layers: 2          # 减少层数
+  dropout: 0.0
+
+# 训练配置（快速测试）
+train:
+  algo: "A2C"
+  gamma: 0.96
+  entropy_coef: 0.05
+  value_coef: 1.0
+  lr_actor: 1.0e-4               # 稍大的学习率
+  lr_critic: 1.0e-4
+  grad_clip: 1.0
+  rollout_steps: 50
+  total_env_steps: 50000         # 只训练50K步（约5-10分钟）
+  log_interval_steps: 500
+  save_interval_steps: 5000
+  eval_interval_steps: 10000
+
+eval:
+  deterministic: true
+  use_fee: true
+  metrics:
+    - "total_return"
+    - "sharpe"
+    - "volatility"
+    - "max_drawdown"
+
+logging:
+  use_wandb: false
+  wandb_project: "qtmrl"
+  wandb_entity: null
+  output_dir: "./runs"

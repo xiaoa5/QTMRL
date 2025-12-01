@@ -1,0 +1,98 @@
+# QTMRL 默认配置 - 完整训练
+seed: 42
+
+# 资产列表（16只美股）
+assets:
+  - AAPL
+  - MSFT
+  - NVDA
+  - CVX
+  - OXY
+  - AAL
+  - UAL
+  - DAL
+  - CCL
+  - RCL
+  - WYNN
+  - LVS
+  - AXP
+  - BAC
+  - JNJ
+  - GOOGL
+
+# 时间窗口和交易参数
+window: 20              # 状态窗口长度（天）
+fee_rate: 0.0005       # 手续费率 0.05% (单边)
+buy_pct: 0.20          # 买入时使用的现金比例
+sell_pct: 0.50         # 卖出时卖出的持仓比例
+initial_cash: 100000   # 初始资金
+
+# 数据分割（2014-2024，10年数据）
+split:
+  train: ["2014-01-02", "2019-12-31"]  # 6年训练
+  valid: ["2020-01-02", "2022-12-31"]  # 3年验证
+  test:  ["2023-01-02", "2024-12-31"]  # 2年测试
+
+# 特征配置
+features:
+  ohlcv: true          # 使用 OHLCV 原始数据
+  indicators:
+    sma: [10, 20, 50]           # 简单移动平均
+    ema: [12, 26]               # 指数移动平均
+    rsi: [14]                   # 相对强弱指标
+    macd: [12, 26, 9]           # MACD (fast, slow, signal)
+    atr: [14]                   # 平均真实波幅
+    bbands: [20, 2.0]           # 布林带 (period, std)
+    ichimoku: [9, 26, 52]       # 一目均衡表
+    heikin_ashi: true           # 平均K线
+    supertrend: [10, 3.0]       # 超级趋势 (period, multiplier)
+
+# 标准化配置
+normalization:
+  method: zscore       # z-score 标准化
+  fit_on: "train"      # 仅在训练集上拟合
+  include: ["OHLCV", "indicators"]  # 标准化的特征
+
+# 状态配置
+state:
+  include_pos: true    # 状态中包含持仓信息
+  include_cash: true   # 状态中包含现金信息
+
+# 模型配置
+model:
+  encoder: "TimeCNN"   # 编码器类型: "TimeCNN" 或 "Transformer"
+  d_model: 128         # 模型维度
+  n_layers: 3          # 层数
+  dropout: 0.0         # Dropout比例
+
+# 训练配置
+train:
+  algo: "A2C"                    # 算法
+  gamma: 0.96                    # 折扣因子
+  entropy_coef: 0.05             # 熵系数
+  value_coef: 1.0                # 价值损失系数
+  lr_actor: 1.0e-5               # Actor学习率
+  lr_critic: 1.0e-5              # Critic学习率
+  grad_clip: 1.0                 # 梯度裁剪
+  rollout_steps: 50              # Rollout步数
+  total_env_steps: 1000000       # 总环境步数（1M）
+  log_interval_steps: 1000       # 日志记录间隔
+  save_interval_steps: 10000     # 模型保存间隔
+  eval_interval_steps: 50000     # 验证集评估间隔
+
+# 评估配置
+eval:
+  deterministic: true            # 确定性策略（argmax）
+  use_fee: true                  # 评估时使用手续费
+  metrics:
+    - "total_return"             # 总收益率
+    - "sharpe"                   # 夏普比率
+    - "volatility"               # 波动率
+    - "max_drawdown"             # 最大回撤
+
+# 日志配置
+logging:
+  use_wandb: false               # 是否使用 Weights & Biases
+  wandb_project: "qtmrl"         # W&B 项目名
+  wandb_entity: null             # W&B 实体（留空则使用默认）
+  output_dir: "./runs"           # 输出目录
