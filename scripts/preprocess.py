@@ -100,7 +100,8 @@ def main():
     logging.info("步骤 3: 分割数据集")
     logging.info("=" * 50)
 
-    full_data["date"] = pd.to_datetime(full_data["date"])
+    # 处理时区信息：转换为UTC或移除时区
+    full_data["date"] = pd.to_datetime(full_data["date"], utc=True)
 
     train_df = full_data[
         (full_data["date"] >= config.split["train"][0])
