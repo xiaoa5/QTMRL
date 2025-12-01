@@ -191,12 +191,16 @@ def create_models(config, n_assets, n_features):
 
     # 创建两个独立的编码器（也可以共享）
     if encoder_type == "TimeCNN":
+        # 获取窗口大小（如果配置中有）
+        window_size = getattr(config, 'window', None)
+        
         actor_encoder = TimeCNNEncoder(
             n_assets=n_assets,
             n_features=n_features,
             d_model=d_model,
             n_layers=n_layers,
             dropout=dropout,
+            window_size=window_size,  # Pass window size for pre-initialization
         )
         critic_encoder = TimeCNNEncoder(
             n_assets=n_assets,
@@ -204,6 +208,7 @@ def create_models(config, n_assets, n_features):
             d_model=d_model,
             n_layers=n_layers,
             dropout=dropout,
+            window_size=window_size,  # Pass window size for pre-initialization
         )
     elif encoder_type == "Transformer":
         actor_encoder = TransformerEncoder(
