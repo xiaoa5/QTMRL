@@ -200,6 +200,13 @@ def main():
     logging.info(f"标准化 {len(feature_cols)} 个特征")
     logging.info(f"方法: {config.normalization['method']}")
 
+    # *** 重要：在标准化之前保存原始的 Close 价格 ***
+    # 环境需要原始价格来计算交易奖励
+    logging.info("保存原始 Close 价格（用于环境奖励计算）...")
+    train_close_original = train_df[["date", "asset", "Close"]].copy()
+    valid_close_original = valid_df[["date", "asset", "Close"]].copy()
+    test_close_original = test_df[["date", "asset", "Close"]].copy()
+
     # 标准化
     train_df, valid_df, test_df, norm_stats = normalize_features(
         train_df,
@@ -217,14 +224,26 @@ def main():
     # 特征列（用于张量）
     tensor_feature_cols = feature_cols
 
-    X_train, Close_train, dates_train = reshape_to_tensor(
+    # 使用标准化后的特征，但用原始 Close 价格
+    X_train, _, dates_train = reshape_to_tensor(
         train_df, config.assets, tensor_feature_cols
     )
-    X_valid, Close_valid, dates_valid = reshape_to_tensor(
+    X_valid, _, dates_valid = reshape_to_tensor(
         valid_df, config.assets, tensor_feature_cols
     )
-    X_test, Close_test, dates_test = reshape_to_tensor(
+    X_test, _, dates_test = reshape_to_tensor(
         test_df, config.assets, tensor_feature_cols
+    )
+    
+    # 从原始数据提取 Close 价格张量
+    _, Close_train, _ = reshape_to_tensor(
+        train_close_original, config.assets, ["Close"]
+    )
+    _, Close_valid, _ = reshape_to_tensor(
+        valid_close_original, config.assets, ["Close"]
+    )
+    _, Close_test, _ = reshape_to_tensor(
+        test_close_original, config.assets, ["Close"]
     )
 
     logging.info(f"训练集张量形状: X={X_train.shape}, Close={Close_train.shape}")
