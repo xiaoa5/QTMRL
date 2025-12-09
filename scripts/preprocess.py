@@ -123,11 +123,43 @@ def main():
     # 合并所有资产数据
     full_data = pd.concat(all_data, ignore_index=True)
 
-    # 移除指标计算初期的NaN值
+    # 处理NaN值 - 改进策略
     initial_rows = len(full_data)
-    full_data = full_data.dropna()
+    
+    # 1. 获取需要处理的数值列（排除date和asset）
+    numeric_cols = full_data.select_dtypes(include=['float64', 'int64']).columns.tolist()
+    
+    # 2. 按资产分组，使用前向填充 + 后向填充处理NaN
+    logging.info("使用前向/后向填充处理NaN值...")
+    for asset in config.assets:
+        mask = full_data["asset"] == asset
+        # 前向填充（用前一天的值填充）
+        full_data.loc[mask, numeric_cols] = full_data.loc[mask, numeric_cols].ffill()
+        # 后向填充（处理开头的NaN）
+        full_data.loc[mask, numeric_cols] = full_data.loc[mask, numeric_cols].bfill()
+    
+    # 3. 对于仍然存在NaN的列，用0填充（极少数情况）
+    remaining_nan = full_data[numeric_cols].isna().sum().sum()
+    if remaining_nan > 0:
+        logging.info(f"剩余 {remaining_nan} 个NaN值，用0填充")
+        full_data[numeric_cols] = full_data[numeric_cols].fillna(0)
+    
+    # 4. 删除预热期 - 每个资产删除前N行（基于最长周期指标）
+    warmup_period = 60  # 比Ichimoku的52天稍多一点
+    logging.info(f"移除每个资产的前 {warmup_period} 行预热期数据...")
+    
+    filtered_data = []
+    for asset in config.assets:
+        asset_data = full_data[full_data["asset"] == asset].copy()
+        if len(asset_data) > warmup_period:
+            filtered_data.append(asset_data.iloc[warmup_period:])
+        else:
+            logging.warning(f"{asset} 数据不足，跳过预热期删除")
+            filtered_data.append(asset_data)
+    
+    full_data = pd.concat(filtered_data, ignore_index=True)
     dropped_rows = initial_rows - len(full_data)
-    logging.info(f"移除了 {dropped_rows} 行包含NaN的数据（指标预热期）")
+    logging.info(f"共移除了 {dropped_rows} 行数据（预热期）")
 
     # ========== 3. 分割数据集 ==========
     logging.info("\n" + "=" * 50)
@@ -222,6 +254,12 @@ def main():
     logging.info("张量数据已保存到 data/processed/*.npy")
 
     # 保存元数据
+    def safe_date_range(dates):
+        """安全获取日期范围"""
+        if len(dates) > 0:
+            return [str(dates[0]), str(dates[-1])]
+        return ["N/A", "N/A"]
+    
     metadata = {
         "assets": config.assets,
         "n_assets": len(config.assets),
@@ -230,15 +268,15 @@ def main():
         "window": config.window,
         "splits": {
             "train": {
-                "date_range": [str(dates_train[0]), str(dates_train[-1])],
+                "date_range": safe_date_range(dates_train),
                 "n_days": len(dates_train),
             },
             "valid": {
-                "date_range": [str(dates_valid[0]), str(dates_valid[-1])],
+                "date_range": safe_date_range(dates_valid),
                 "n_days": len(dates_valid),
             },
             "test": {
-                "date_range": [str(dates_test[0]), str(dates_test[-1])],
+                "date_range": safe_date_range(dates_test),
                 "n_days": len(dates_test),
             },
         },
