@@ -1,0 +1,128 @@
+# QTMRL 原论文完整配置 - 使用扩展技术指标
+# 此配置基于原作者 QTMRL2 中的完整技术指标集
+
+seed: 42
+
+# 资产列表（与原论文一致）
+assets:
+  - AAPL
+  - MSFT  
+  - NVDA
+  - GOOGL
+  - CVX
+  - OXY
+  - AAL
+  - UAL
+  - DAL
+  - CCL
+  - RCL
+  - WYNN
+  - LVS
+  - AXP
+  - BAC
+  - JNJ
+
+# 时间窗口和交易参数
+window: 5              # 原论文使用 window_size=5
+fee_rate: 0.001        # 原论文使用 trade_fee=0.001
+buy_pct: 0.20          # 原论文使用 buy_ratio=0.2
+sell_pct: 0.50         # 原论文使用 sell_ratio=0.5
+initial_cash: 10000    # 原论文使用 initial_capital=10000
+
+# 数据分割（10年训练周期）
+split:
+  train: ["2009-01-02", "2018-12-31"]  # 10年训练
+  valid: ["2019-01-02", "2020-12-31"]  # 2年验证
+  test:  ["2021-01-02", "2022-12-31"]  # 2年测试
+
+# 特征配置 - 原论文完整指标集
+# 对应原作者 feature_columns 列表中的所有指标
+features:
+  ohlcv: true
+  indicators:
+    # 移动平均
+    sma: [5, 20, 50]           # SMA_5, SMA_20, SMA_50
+    ema: [12, 26, 50]          # EMA_12, EMA_26, EMA_50
+    
+    # 动量指标
+    rsi: [14]                   # RSI_14
+    macd: [12, 26, 9]          # macd_12_26_9, signal_12_26_9, hist_12_26_9
+    
+    # 波动性指标
+    atr: [10, 14]              # ATR_10, ATR_14 (原论文两个周期)
+    bbands: [20, 2.0]          # UpperBB_20_2, LowerBB_20_2
+    
+    # 趋势指标
+    ichimoku: [9, 26, 52]      # Tenkan Sen, Kijun Sen, Senkou Span A/B, Chikou Span
+    supertrend: [10, 3.0]      # ST_10_3, STX_10_3
+    
+    # K线形态
+    heikin_ashi: true          # HA_Open, HA_High, HA_Low, HA_Close
+  
+  # 扩展指标 - 原论文使用的衍生特征
+  extended:
+    return: true               # 收益率
+    volatility: true           # 波动率 (High - Low)
+    price_change: true         # 价格变化率
+    volume_change: true        # 成交量变化率
+    tr: true                   # True Range
+    stddev: [20]               # STDDEV_20
+    sma_ratio: [5, 20]         # SMA_5 / SMA_20 比率
+    bb_width: [20, 2.0]        # 布林带宽度
+
+normalization:
+  method: zscore
+  fit_on: "train"
+  include: ["OHLCV", "indicators", "extended"]
+
+state:
+  include_pos: true
+  include_cash: true
+
+# 模型配置
+model:
+  encoder: "TimeCNN"
+  d_model: 128
+  n_layers: 3
+  dropout: 0.2
+
+# 训练配置 - 原论文参数
+train:
+  algo: "A2C"
+  gamma: 0.96
+  entropy_coef: 0.05
+  value_coef: 0.5
+  lr_actor: 1.0e-5
+  lr_critic: 1.0e-5
+  grad_clip: 0.5
+  rollout_steps: 50
+  total_env_steps: 1000000       # 100万步
+  log_interval_steps: 1000
+  save_interval_steps: 50000
+  eval_interval_steps: 50000
+  
+  # 额外的奖励参数 (来自原论文)
+  hold_penalty_threshold: 20
+  hold_penalty_factor: 0.01
+  hold_severe_threshold: 50
+  hold_severe_penalty: 0.1
+  buy_reward: 0.1
+  insufficient_fund_penalty: 0.05
+  profit_reward_factor: 0.01
+  value_increase_factor: 0.001
+  invalid_action_penalty: 0.02
+
+eval:
+  deterministic: true
+  use_fee: true
+  metrics:
+    - "total_return"
+    - "sharpe"
+    - "volatility"
+    - "max_drawdown"
+
+logging:
+  use_wandb: false
+  wandb_project: "qtmrl"
+  wandb_entity: null
+  output_dir: "./runs"

@@ -1,4 +1,9 @@
-"""数据预处理脚本"""
+"""数据预处理脚本
+
+支持两种指标计算模式：
+1. 基础模式：使用 indicators.py 中的指标（默认）
+2. 扩展模式：使用 indicators_extended.py 中的完整指标集（当配置中包含 extended 字段时）
+"""
 import sys
 from pathlib import Path
 
@@ -11,6 +16,13 @@ import pandas as pd
 from qtmrl.utils import load_config, save_json, save_dataframe
 from qtmrl.dataset import StockDataset, reshape_to_tensor
 from qtmrl.indicators import calculate_all_indicators, normalize_features
+
+# 尝试导入扩展指标模块
+try:
+    from qtmrl.indicators_extended import calculate_all_extended_indicators
+    HAS_EXTENDED_INDICATORS = True
+except ImportError:
+    HAS_EXTENDED_INDICATORS = False
 
 
 def main():
@@ -68,6 +80,22 @@ def main():
     logging.info("步骤 2: 计算技术指标")
     logging.info("=" * 50)
 
+    # 检查是否使用扩展指标
+    use_extended = (
+        HAS_EXTENDED_INDICATORS 
+        and config.features.get("extended") is not None
+    )
+    
+    if use_extended:
+        logging.info("使用扩展指标模式 (indicators_extended)")
+        # 合并基础指标和扩展指标配置
+        extended_config = {}
+        if config.features.get("indicators"):
+            extended_config.update(config.features["indicators"])
+        extended_config["extended"] = config.features["extended"]
+    else:
+        logging.info("使用基础指标模式 (indicators)")
+
     # 对每个资产计算指标
     all_data = []
     for asset in config.assets:
@@ -76,7 +104,13 @@ def main():
         asset_data = asset_data.set_index("date").sort_index()
 
         # 计算指标
-        if config.features.get("indicators"):
+        if use_extended:
+            # 使用扩展指标计算
+            asset_data = calculate_all_extended_indicators(
+                asset_data, extended_config
+            )
+        elif config.features.get("indicators"):
+            # 使用基础指标计算
             asset_data = calculate_all_indicators(
                 asset_data, config.features["indicators"]
             )
