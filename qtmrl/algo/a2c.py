@@ -151,9 +151,12 @@ class A2CTrainer:
         returns = returns.to(self.device)
         advantages = advantages.to(self.device)
 
-        # 标准化优势
+        # 标准化优势 (添加最小std阈值以防止数值不稳定)
         if len(advantages) > 1:
-            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+            adv_std = advantages.std()
+            if adv_std > 1e-3:  # 只有std足够大时才标准化
+                advantages = (advantages - advantages.mean()) / adv_std
+            # 如果std太小，说明advantages接近常数，不标准化
 
         # ========== 更新Actor ==========
         self.actor_optimizer.zero_grad()

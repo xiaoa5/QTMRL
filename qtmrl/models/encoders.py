@@ -40,12 +40,22 @@ class TimeCNNEncoder(nn.Module):
         # 位置和现金信息融合
         self.pos_embed = nn.Linear(1, d_model // 4)
         self.cash_embed = nn.Linear(1, d_model // 4)
-        
+
+        # Position embedding融合层 (d_model + d_model//4 -> d_model)
+        self.pos_fusion = nn.Linear(d_model + d_model // 4, d_model)
+
+        # Cash embedding融合层 (d_model + d_model//4 -> d_model)
+        self.cash_fusion = nn.Linear(d_model + d_model // 4, d_model)
+
         # Initialize embedding layers
         nn.init.xavier_uniform_(self.pos_embed.weight)
         nn.init.zeros_(self.pos_embed.bias)
         nn.init.xavier_uniform_(self.cash_embed.weight)
         nn.init.zeros_(self.cash_embed.bias)
+        nn.init.xavier_uniform_(self.pos_fusion.weight)
+        nn.init.zeros_(self.pos_fusion.bias)
+        nn.init.xavier_uniform_(self.cash_fusion.weight)
+        nn.init.zeros_(self.cash_fusion.bias)
         
         # Note: Conv layers will be created dynamically in forward pass
         # to handle variable window sizes during validation
@@ -199,14 +209,31 @@ class TimeCNNEncoder(nn.Module):
             pos_emb = self.pos_embed(positions[:, i:i+1])  # [B, d_model//4]
             pos_emb = F.relu(pos_emb)
 
-            # 拼接
-            # 为了保持维度一致，我们将pooled截断或者调整pos_emb维度
-            # 这里简化处理：将位置嵌入加到编码上（广播）
-            # 更好的做法是concat后再过一层MLP
-            asset_encodings.append(pooled)
+            # 拼接pooled和position embedding
+            asset_with_pos = torch.cat([pooled, pos_emb], dim=-1)  # [B, d_model + d_model//4]
+
+            # 投影回d_model维度
+            asset_enc = self.pos_fusion(asset_with_pos)  # [B, d_model]
+            asset_enc = F.relu(asset_enc)
+
+            asset_encodings.append(asset_enc)
 
         # 堆叠所有资产 [B, N, d_model]
         encodings = torch.stack(asset_encodings, dim=1)
+
+        # 融合现金信息 (全局信息，广播到所有资产)
+        cash_emb = self.cash_embed(cash)  # [B, d_model//4]
+        cash_emb = F.relu(cash_emb)
+
+        # 将cash embedding广播到所有资产
+        cash_emb_expanded = cash_emb.unsqueeze(1).expand(-1, N, -1)  # [B, N, d_model//4]
+
+        # 拼接encodings和cash embedding
+        encodings_with_cash = torch.cat([encodings, cash_emb_expanded], dim=-1)  # [B, N, d_model + d_model//4]
+
+        # 投影回d_model维度
+        encodings = self.cash_fusion(encodings_with_cash)  # [B, N, d_model]
+        encodings = F.relu(encodings)
 
         return encodings
 
@@ -252,8 +279,24 @@ class TransformerEncoder(nn.Module):
         )
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
 
-        # 位置编码
+        # 位置编码 (时间维度)
         self.pos_encoding = nn.Parameter(torch.randn(1, 100, d_model))  # 最多100步
+
+        # 持仓和现金信息融合
+        self.pos_embed = nn.Linear(1, d_model // 4)
+        self.cash_embed = nn.Linear(1, d_model // 4)
+        self.pos_fusion = nn.Linear(d_model + d_model // 4, d_model)
+        self.cash_fusion = nn.Linear(d_model + d_model // 4, d_model)
+
+        # Initialize
+        nn.init.xavier_uniform_(self.pos_embed.weight)
+        nn.init.zeros_(self.pos_embed.bias)
+        nn.init.xavier_uniform_(self.cash_embed.weight)
+        nn.init.zeros_(self.cash_embed.bias)
+        nn.init.xavier_uniform_(self.pos_fusion.weight)
+        nn.init.zeros_(self.pos_fusion.bias)
+        nn.init.xavier_uniform_(self.cash_fusion.weight)
+        nn.init.zeros_(self.cash_fusion.bias)
 
     def forward(self, features, positions, cash):
         """前向传播
@@ -286,9 +329,27 @@ class TransformerEncoder(nn.Module):
             # 取最后一个时间步
             last_hidden = encoded[:, -1, :]  # [B, d_model]
 
-            asset_encodings.append(last_hidden)
+            # 融合持仓信息
+            pos_emb = self.pos_embed(positions[:, i:i+1])  # [B, d_model//4]
+            pos_emb = F.relu(pos_emb)
+
+            # 拼接和投影
+            asset_with_pos = torch.cat([last_hidden, pos_emb], dim=-1)  # [B, d_model + d_model//4]
+            asset_enc = self.pos_fusion(asset_with_pos)  # [B, d_model]
+            asset_enc = F.relu(asset_enc)
+
+            asset_encodings.append(asset_enc)
 
         # 堆叠所有资产 [B, N, d_model]
         encodings = torch.stack(asset_encodings, dim=1)
+
+        # 融合现金信息
+        cash_emb = self.cash_embed(cash)  # [B, d_model//4]
+        cash_emb = F.relu(cash_emb)
+        cash_emb_expanded = cash_emb.unsqueeze(1).expand(-1, N, -1)  # [B, N, d_model//4]
+
+        encodings_with_cash = torch.cat([encodings, cash_emb_expanded], dim=-1)  # [B, N, d_model + d_model//4]
+        encodings = self.cash_fusion(encodings_with_cash)  # [B, N, d_model]
+        encodings = F.relu(encodings)
 
         return encodings
