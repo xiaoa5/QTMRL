@@ -24,34 +24,49 @@ def calculate_total_return(portfolio_values: np.ndarray) -> float:
     return (final_value / initial_value) - 1.0
 
 
-def calculate_sharpe_ratio(returns: np.ndarray, risk_free_rate: float = 0.0) -> float:
+def calculate_sharpe_ratio(
+    returns: np.ndarray, risk_free_rate: float = 0.0, annualize: bool = False,
+    trading_days_per_year: int = 252
+) -> float:
     """计算夏普比率
 
     Args:
-        returns: 收益率序列
+        returns: 日收益率序列
         risk_free_rate: 无风险利率（日频）
+        annualize: 是否年化（乘以sqrt(252)）
+        trading_days_per_year: 每年交易日数
 
     Returns:
-        夏普比率
+        夏普比率（日频或年化）
     """
     if len(returns) == 0:
         return 0.0
 
     excess_returns = returns - risk_free_rate
     mean_return = np.mean(excess_returns)
-    std_return = np.std(excess_returns)
+    # 使用样本标准差 (ddof=1)，更适合有限样本
+    std_return = np.std(excess_returns, ddof=1) if len(returns) > 1 else 0.0
 
     if std_return == 0:
         return 0.0
 
-    return mean_return / std_return
+    daily_sharpe = mean_return / std_return
+
+    if annualize:
+        return daily_sharpe * np.sqrt(trading_days_per_year)
+
+    return daily_sharpe
 
 
-def calculate_volatility(returns: np.ndarray) -> float:
+def calculate_volatility(
+    returns: np.ndarray, annualize: bool = False, trading_days_per_year: int = 252
+) -> float:
     """计算波动率
 
     Args:
-        returns: 收益率序列
+        returns: 日收益率序列
+        annualize: 是否年化
+        trading_days_per_year: 每年交易日数
 
     Returns:
         波动率（标准差）
@@ -59,7 +74,13 @@ def calculate_volatility(returns: np.ndarray) -> float:
     if len(returns) == 0:
         return 0.0
 
-    return np.std(returns)
+    # 使用样本标准差 (ddof=1)
+    vol = np.std(returns, ddof=1) if len(returns) > 1 else 0.0
+
+    if annualize:
+        return vol * np.sqrt(trading_days_per_year)
+
+    return vol
 
 
 def calculate_max_drawdown(portfolio_values: np.ndarray) -> float:
@@ -77,8 +98,11 @@ def calculate_max_drawdown(portfolio_values: np.ndarray) -> float:
     # 计算累计最大值
     cummax = np.maximum.accumulate(portfolio_values)
 
+    # 避免除以零
+    safe_cummax = np.where(cummax == 0, 1.0, cummax)
+
     # 计算回撤
-    drawdowns = (portfolio_values - cummax) / cummax
+    drawdowns = (portfolio_values - cummax) / safe_cummax
 
     # 最大回撤
     max_dd = np.min(drawdowns)
@@ -103,24 +127,14 @@ def calculate_annualized_return(
         return 0.0
 
     years = n_days / trading_days_per_year
+
+    # 防止负基数导致复数
+    if total_return <= -1.0:
+        return -1.0
+
     annualized = (1 + total_return) ** (1 / years) - 1
 
     return annualized
-
-
-def calculate_annualized_volatility(
-    volatility: float, trading_days_per_year: int = 252
-) -> float:
-    """计算年化波动率
-
-    Args:
-        volatility: 日频波动率
-        trading_days_per_year: 每年交易日数
-
-    Returns:
-        年化波动率
-    """
-    return volatility * np.sqrt(trading_days_per_year)
 
 
 def calculate_all_metrics(
@@ -130,7 +144,7 @@ def calculate_all_metrics(
 
     Args:
         portfolio_values: 组合价值序列
-        annualize: 是否年化指标
+        annualize: 是否计算年化指标
 
     Returns:
         指标字典
@@ -139,7 +153,9 @@ def calculate_all_metrics(
     if len(portfolio_values) < 2:
         returns = np.array([])
     else:
-        returns = np.diff(portfolio_values) / portfolio_values[:-1]
+        # 防止除以零
+        safe_values = np.where(portfolio_values[:-1] == 0, 1.0, portfolio_values[:-1])
+        returns = np.diff(portfolio_values) / safe_values
 
     # 计算指标
     total_return = calculate_total_return(portfolio_values)
@@ -161,11 +177,12 @@ def calculate_all_metrics(
         metrics["annualized_return"] = calculate_annualized_return(
             total_return, metrics["n_days"]
         )
-        metrics["annualized_volatility"] = calculate_annualized_volatility(volatility)
-        metrics["annualized_sharpe"] = (
-            metrics["annualized_return"] / metrics["annualized_volatility"]
-            if metrics["annualized_volatility"] > 0
-            else 0.0
+        metrics["annualized_volatility"] = calculate_volatility(
+            returns, annualize=True
+        )
+        # 正确的年化Sharpe: daily_sharpe * sqrt(252)
+        metrics["annualized_sharpe"] = calculate_sharpe_ratio(
+            returns, annualize=True
         )
 
     return metrics

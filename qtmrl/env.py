@@ -137,41 +137,46 @@ class TradingEnv:
 
         current_prices = self.Close[self.current_step]
 
-        # 执行交易
+        # 先执行所有卖出（回收现金），再执行买入（分配现金）
+        # 这避免了买入顺序偏差：先卖后买保证所有买入看到同样的现金水平
+
+        # Phase 1: 执行所有卖出
         for i in range(self.N):
-            action = actions[i]
-            price = current_prices[i]
+            if actions[i] == Action.SELL:
+                price = current_prices[i]
+                if price <= 0:
+                    continue
 
-            if price <= 0:  # 价格无效，跳过
-                continue
-
-            if action == Action.BUY:
-                # 买入：使用 buy_pct * cash
-                amount = self.cash * self.buy_pct
-                if amount > 0:
-                    # 计算手续费
-                    fee = amount * self.fee_rate
-                    # 可用于购买的金额
-                    net_amount = amount - fee
-                    # 购买股数
-                    shares = net_amount / price
-
-                    self.positions[i] += shares
-                    self.cash -= amount
-
-            elif action == Action.SELL:
-                # 卖出：卖出 sell_pct * 持仓
                 shares_to_sell = self.positions[i] * self.sell_pct
                 if shares_to_sell > 0:
-                    # 卖出金额
                     amount = shares_to_sell * price
-                    # 计算手续费
                     fee = amount * self.fee_rate
-                    # 净收入
                     net_amount = amount - fee
 
                     self.positions[i] -= shares_to_sell
                     self.cash += net_amount
+
+        # Phase 2: 执行所有买入
+        # 先统计有多少资产要买入，均分现金避免顺序偏差
+        buy_indices = [
+            i for i in range(self.N)
+            if actions[i] == Action.BUY and current_prices[i] > 0
+        ]
+
+        if len(buy_indices) > 0:
+            # 每个买入资产分配相等的现金
+            cash_per_asset = self.cash * self.buy_pct / len(buy_indices)
+
+            for i in buy_indices:
+                price = current_prices[i]
+                amount = cash_per_asset
+                if amount > 0:
+                    fee = amount * self.fee_rate
+                    net_amount = amount - fee
+                    shares = net_amount / price
+
+                    self.positions[i] += shares
+                    self.cash -= amount
 
         # 计算当前组合价值
         next_step = self.current_step + 1

@@ -84,14 +84,14 @@ class A2CTrainer:
             actions_np = actions.cpu().numpy()[0]
             next_state, reward, done, info = env.step(actions_np)
 
-            # 存储
+            # 存储 (squeeze values to scalar to avoid shape issues)
             buffer.add(
                 features=features.squeeze(0).cpu(),
                 positions=positions.squeeze(0).cpu(),
                 cash=cash.squeeze(0).cpu(),
                 actions=actions.squeeze(0).cpu(),
                 rewards=reward,
-                values=values.cpu(),
+                values=values.squeeze(-1).cpu(),  # [1] -> [] scalar
                 log_probs=log_probs.squeeze(0).cpu(),
                 dones=done,
             )
@@ -100,6 +100,8 @@ class A2CTrainer:
             steps += 1
 
             if done:
+                # 自动重置环境，以便下次collect_rollout可以继续
+                env.reset()
                 break
 
         # 计算最后状态的价值（用于bootstrap）

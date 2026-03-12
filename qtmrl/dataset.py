@@ -132,12 +132,13 @@ class StockDataset:
         self.aligned_data = self.aligned_data.reset_index()
         self.aligned_data = self.aligned_data.rename(columns={"index": "date"})
 
-        # 移除仍有缺失值的行（起始部分）
-        initial_len = len(self.aligned_data)
-        self.aligned_data = self.aligned_data.dropna()
-        dropped = initial_len - len(self.aligned_data)
-        if dropped > 0:
-            logging.info(f"移除了 {dropped} 行包含缺失值的数据")
+        # 移除仍有缺失值的日期 (确保跨资产对齐)
+        # 找出有NaN的日期，移除该日期所有资产的数据
+        initial_dates = len(self.aligned_data["date"].unique())
+        nan_dates = self.aligned_data[self.aligned_data.isna().any(axis=1)]["date"].unique()
+        if len(nan_dates) > 0:
+            self.aligned_data = self.aligned_data[~self.aligned_data["date"].isin(nan_dates)]
+            logging.info(f"移除了 {len(nan_dates)} 个包含缺失值的日期 (保持跨资产对齐)")
 
         logging.info(
             f"数据对齐完成: {len(self.aligned_data)} 行, "

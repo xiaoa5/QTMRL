@@ -90,6 +90,7 @@ def compute_returns_advantages(
     last_value: torch.Tensor,
     dones: torch.Tensor,
     gamma: float = 0.96,
+    gae_lambda: float = 0.95,
 ) -> tuple:
     """计算回报和优势
 
@@ -99,32 +100,38 @@ def compute_returns_advantages(
         last_value: 标量，最后状态的价值估计
         dones: [T] 是否结束
         gamma: 折扣因子
+        gae_lambda: GAE lambda参数 (0=TD error, 1=Monte Carlo)
 
     Returns:
         (returns, advantages)
         - returns: [T] 回报
-        - advantages: [T] 优势
+        - advantages: [T] GAE优势估计
     """
     T = len(rewards)
     returns = torch.zeros(T, dtype=torch.float32)
     advantages = torch.zeros(T, dtype=torch.float32)
 
-    # 从后向前计算
+    # 使用GAE (Generalized Advantage Estimation)
+    # A_t = sum_{l=0}^{inf} (gamma*lambda)^l * delta_{t+l}
+    # delta_t = r_t + gamma * V(s_{t+1}) - V(s_t)
     next_value = last_value
-    next_return = last_value
+    gae = 0.0
 
     for t in reversed(range(T)):
         if dones[t]:
             next_value = 0.0
-            next_return = 0.0
+            gae = 0.0
 
-        # 计算回报 (bootstrapped return)
-        returns[t] = rewards[t] + gamma * next_return
+        # TD error (delta)
+        delta = rewards[t] + gamma * next_value - values[t]
 
-        # 计算优势 (TD error)
-        advantages[t] = rewards[t] + gamma * next_value - values[t]
+        # GAE累积
+        gae = delta + gamma * gae_lambda * gae
+        advantages[t] = gae
+
+        # Return = Advantage + Value
+        returns[t] = advantages[t] + values[t]
 
         next_value = values[t]
-        next_return = returns[t]
 
     return returns, advantages

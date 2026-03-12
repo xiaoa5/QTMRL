@@ -57,6 +57,9 @@ class TimeCNNEncoder(nn.Module):
         nn.init.xavier_uniform_(self.cash_fusion.weight)
         nn.init.zeros_(self.cash_fusion.bias)
         
+        # 全局平均池化 (移到__init__避免每次forward重新创建)
+        self.pool = nn.AdaptiveAvgPool1d(1)
+
         # Note: Conv layers will be created dynamically in forward pass
         # to handle variable window sizes during validation
         self.conv_layers = None
@@ -121,35 +124,42 @@ class TimeCNNEncoder(nn.Module):
         assert n_feat == self.n_features, f"Expected {self.n_features} features, got {n_feat}"
 
         # For very small windows (W < 3), use linear projection to avoid conv issues
-        # Conv1d with small inputs can have padding problems, especially with multiple layers
         if W < 3:
-            # Use linear projection instead of convolution for very small windows
             if not hasattr(self, 'linear_proj'):
                 self.linear_proj = nn.Linear(self.n_features, self.d_model).to(features.device)
-                # Properly initialize the weights
                 nn.init.xavier_uniform_(self.linear_proj.weight)
                 nn.init.zeros_(self.linear_proj.bias)
-            
+
             asset_encodings = []
             for i in range(N):
-                # Average over the window dimension
                 asset_feat = features[:, :, i, :]  # [B, W, F]
-                asset_feat_avg = asset_feat.mean(dim=1)  # [B, F] - average over time
-                
-                # Check for NaN in input
+                asset_feat_avg = asset_feat.mean(dim=1)  # [B, F]
                 if torch.isnan(asset_feat_avg).any():
-                    # Replace NaN with zeros
                     asset_feat_avg = torch.nan_to_num(asset_feat_avg, nan=0.0)
-                
+
                 encoded = self.linear_proj(asset_feat_avg)  # [B, d_model]
                 encoded = F.relu(encoded)
-                
-                # Clamp to prevent extreme values
                 encoded = torch.clamp(encoded, min=-10.0, max=10.0)
-                
-                asset_encodings.append(encoded)
-            
+
+                # 融合持仓信息 (与正常路径一致)
+                pos_emb = self.pos_embed(positions[:, i:i+1])  # [B, d_model//4]
+                pos_emb = F.relu(pos_emb)
+                asset_with_pos = torch.cat([encoded, pos_emb], dim=-1)
+                asset_enc = self.pos_fusion(asset_with_pos)
+                asset_enc = F.relu(asset_enc)
+
+                asset_encodings.append(asset_enc)
+
             encodings = torch.stack(asset_encodings, dim=1)  # [B, N, d_model]
+
+            # 融合现金信息 (与正常路径一致)
+            cash_emb = self.cash_embed(cash)
+            cash_emb = F.relu(cash_emb)
+            cash_emb_expanded = cash_emb.unsqueeze(1).expand(-1, N, -1)
+            encodings_with_cash = torch.cat([encodings, cash_emb_expanded], dim=-1)
+            encodings = self.cash_fusion(encodings_with_cash)
+            encodings = F.relu(encodings)
+
             return encodings
 
         # Dynamically create conv layers if not already created or if window size changed
@@ -165,9 +175,6 @@ class TimeCNNEncoder(nn.Module):
             # Ensure layers are on correct device
             self.conv_layers = self.conv_layers.to(features.device)
         
-        # 全局平均池化
-        pool = nn.AdaptiveAvgPool1d(1)
-
         # 对每个资产独立编码
         asset_encodings = []
         for i in range(N):
@@ -193,14 +200,14 @@ class TimeCNNEncoder(nn.Module):
                 # Provide detailed error message for debugging
                 raise RuntimeError(
                     f"Conv1d failed with input shape {asset_feat.shape}, "
-                    f"kernel_size={kernel_size}, padding={padding}, "
+                    f"kernel_size={kernel_size}, "
                     f"window_size={W}. Input stats: min={asset_feat.min():.4f}, "
                     f"max={asset_feat.max():.4f}, mean={asset_feat.mean():.4f}. "
                     f"Original error: {e}"
                 )
 
             # 全局池化
-            pooled = pool(encoded).squeeze(-1)  # [B, d_model]
+            pooled = self.pool(encoded).squeeze(-1)  # [B, d_model]
             
             # Clamp to prevent extreme values
             pooled = torch.clamp(pooled, min=-10.0, max=10.0)
